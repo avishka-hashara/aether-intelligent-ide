@@ -1,0 +1,39 @@
+{
+  "name": "@aether/extension",
+  "version": "1.0.0",
+  "description": "Aether Intelligent IDE VS Code Extension",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "aether.chat.focus",
+        "title": "Aether: Focus Chat"
+      },
+      {
+        "command": "aether.inlineEdit",
+        "title": "Aether: Inline Edit"
+      },
+      {
+        "command": "aether.openManager",
+        "title": "Aether: Open Mission Manager"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "tsup",
+    "watch": "tsup --watch"
+  },
+  "dependencies": {
+    "@aether/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "@types/vscode": "^1.80.0",
+    "tsup": "^8.5.1",
+    "typescript": "~5.6.3"
+  }
+}
