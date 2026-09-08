@@ -1,0 +1,23 @@
+{
+  "name": "@aether/agent-core",
+  "version": "1.0.0",
+  "description": "Autonomous agent loop and budget governor for Aether IDE",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "type": "module",
+  "dependencies": {
+    "@aether/protocol": "workspace:*",
+    "@aether/providers": "workspace:*",
+    "@aether/tools": "workspace:*"
+  }
+}
