@@ -13,7 +13,11 @@
             "@aether/*": [
                 "packages/*/dist/index.d.ts",
                 "packages/*/src/index.ts",
-                "packages/*/src"
+                "packages/*/src",
+                "apps/*/src/index.ts",
+                "apps/*/src",
+                "apps/*/dist/index.d.ts",
+                "apps/*/dist/index.d.cts"
             ]
         }
     },

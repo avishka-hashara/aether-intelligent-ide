@@ -9,6 +9,8 @@ import { OpenRouterClient } from "@aether/providers";
 import { BudgetTracker, runAgentLoop } from "@aether/agent-core";
 import { initDB, workspaces, missions, missionEvents } from "./db/index.js";
 
+export * from "./db/index.js";
+
 // Load environment variables (.env)
 dotenv.config();
 
@@ -258,10 +260,22 @@ export async function runCli(argv = process.argv): Promise<void> {
   await program.parseAsync(argv);
 }
 
-// Auto-run if executed as script
-if (process.argv[1] && (process.argv[1].endsWith("dist/index.js") || process.argv[1].endsWith("src/index.ts") || process.argv[1].includes("aether"))) {
+// Auto-run if executed directly as CLI binary
+const isDirectRun = Boolean(
+  !process.env.VITEST &&
+  process.env.NODE_ENV !== "test" &&
+  process.argv[1] &&
+  (
+    process.argv[1].endsWith("apps/cli/dist/index.js") ||
+    process.argv[1].endsWith("apps\\cli\\dist\\index.js") ||
+    process.argv[1].endsWith("bin/aether") ||
+    process.argv[1].endsWith("bin\\aether")
+  )
+);
+
+if (isDirectRun) {
   runCli().catch((err) => {
-    console.error(chalk.red(`Fatal CLI error: ${err.message}`));
+    console.error(`Fatal CLI error: ${err.message}`);
     process.exit(1);
   });
 }

@@ -8,14 +8,11 @@ export default defineConfig({
   outDir: "dist",
   clean: true,
   sourcemap: true,
-  dts: true,
+  external: ["better-sqlite3"],
   outExtension() {
     return {
       js: ".js",
     };
-  },
-  banner: {
-    js: "#!/usr/bin/env node",
   },
   async onSuccess() {
     await fs.writeFile(

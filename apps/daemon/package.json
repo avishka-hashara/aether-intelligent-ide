@@ -1,0 +1,33 @@
+{
+  "name": "@aether/daemon",
+  "version": "1.0.0",
+  "description": "Agent Daemon providing Fastify REST and WebSocket API for Aether",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/index.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "@aether/agent-core": "workspace:*",
+    "@aether/cli": "workspace:*",
+    "@aether/protocol": "workspace:*",
+    "@aether/providers": "workspace:*",
+    "@aether/tools": "workspace:*",
+    "@fastify/type-provider-typebox": "^6.1.0",
+    "@fastify/websocket": "^11.3.0",
+    "@sinclair/typebox": "^0.34.52",
+    "better-sqlite3": "^13.0.3",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.12.3",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.4.1",
+    "@types/ws": "^8.5.14",
+    "tsup": "^8.5.1",
+    "typescript": "~5.6.3"
+  }
+}
