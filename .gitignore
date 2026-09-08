@@ -1,0 +1,11 @@
+docs/01-architecture.md
+docs/02-agent-system.md
+docs/03-openrouter-integration.md
+docs/04-api-schemas.md
+docs/05-roadmap.md
+docs/06-security-ops-legal.md
+docs/agent-loop.ts
+docs/openrouter-client.ts
+docs/README.md
+docs/protocol.ts
+node_modules
