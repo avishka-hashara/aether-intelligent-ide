@@ -8,6 +8,8 @@ import { WebSocketServer, WebSocket } from "ws";
 const mockCommands: Map<string, Function> = new Map();
 const executedCommands: string[] = [];
 const registeredViews: string[] = [];
+const registeredCompletionProviders: any[] = [];
+let mockDiagnostics: any[] = [];
 
 vi.mock("vscode", () => ({
   commands: {
@@ -28,12 +30,41 @@ vi.mock("vscode", () => ({
       return { dispose: vi.fn() };
     }),
   },
+  languages: {
+    registerInlineCompletionItemProvider: vi.fn((_selector: any, provider: any) => {
+      registeredCompletionProviders.push(provider);
+      return { dispose: vi.fn() };
+    }),
+    getDiagnostics: vi.fn((_uri: any) => mockDiagnostics),
+  },
+  Position: class {
+    constructor(public line: number, public character: number) {}
+  },
+  Range: class {
+    constructor(public start: any, public end: any) {}
+  },
+  InlineCompletionItem: class {
+    constructor(public insertText: string, public range?: any) {}
+  },
+  DiagnosticSeverity: {
+    Error: 0,
+    Warning: 1,
+    Information: 2,
+    Hint: 3,
+  },
+  CancellationError: class extends Error {
+    constructor() {
+      super("Canceled");
+    }
+  },
 }));
 
 import { DaemonClient } from "./daemon-client.js";
 import { DaemonManager } from "./daemon-manager.js";
 import { WsClient } from "./ws-client.js";
 import { AgentSidebarProvider } from "./sidebar.js";
+import { AetherCompletionProvider } from "./completion.js";
+import { ContextBridge } from "./context-bridge.js";
 import { activate, deactivate } from "./extension.js";
 import { MissionEvent } from "@aether/protocol";
 
@@ -47,6 +78,8 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
     mockCommands.clear();
     executedCommands.length = 0;
     registeredViews.length = 0;
+    registeredCompletionProviders.length = 0;
+    mockDiagnostics = [];
   });
 
   afterEach(() => {
@@ -281,8 +314,128 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
     });
   });
 
+  describe("AetherCompletionProvider", () => {
+    it("extracts prefix/suffix, debounces, and returns inline completion item", async () => {
+      fs.writeFileSync(
+        fakeConfigFile,
+        JSON.stringify({ port: 12345, token: "test-token" })
+      );
+
+      const daemonClient = new DaemonClient(fakeConfigFile);
+      const provider = new AetherCompletionProvider(daemonClient, 10); // short debounce for test
+
+      let fetchPayload: any = null;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockImplementation(async (_url, opts) => {
+          fetchPayload = JSON.parse(opts.body);
+          return {
+            ok: true,
+            json: async () => ({ completion: "world" }),
+          };
+        })
+      );
+
+      const mockDoc = {
+        lineCount: 2,
+        lineAt: () => ({ text: "end" }),
+        getText: vi.fn((range: any) => {
+          if (range.start.line === 0 && range.start.character === 0) {
+            return "hello ";
+          }
+          return " end";
+        }),
+        uri: { fsPath: "/workspace/index.ts" },
+        languageId: "typescript",
+      } as any;
+
+      const mockPosition = { line: 0, character: 6 } as any;
+      const mockToken = {
+        isCancellationRequested: false,
+        onCancellationRequested: vi.fn(() => ({ dispose: vi.fn() })),
+      } as any;
+
+      const items = await provider.provideInlineCompletionItems(
+        mockDoc,
+        mockPosition,
+        {} as any,
+        mockToken
+      );
+
+      expect(items).toBeDefined();
+      expect(items).toHaveLength(1);
+      expect(items![0].insertText).toBe("world");
+      expect(fetchPayload).toEqual({
+        prefix: "hello ",
+        suffix: " end",
+        filepath: "/workspace/index.ts",
+        language: "typescript",
+      });
+    });
+
+    it("returns undefined if cancelled during debounce", async () => {
+      const daemonClient = new DaemonClient(fakeConfigFile);
+      const provider = new AetherCompletionProvider(daemonClient, 50);
+
+      const mockDoc = {
+        lineCount: 1,
+        lineAt: () => ({ text: "" }),
+        getText: () => "",
+        uri: { fsPath: "/test" },
+        languageId: "typescript",
+      } as any;
+
+      const mockToken = {
+        isCancellationRequested: true,
+        onCancellationRequested: vi.fn(),
+      } as any;
+
+      const items = await provider.provideInlineCompletionItems(
+        mockDoc,
+        { line: 0, character: 0 } as any,
+        {} as any,
+        mockToken
+      );
+
+      expect(items).toBeUndefined();
+    });
+  });
+
+  describe("ContextBridge", () => {
+    it("maps LSP diagnostics into lightweight DiagnosticItem array", () => {
+      const bridge = new ContextBridge();
+
+      mockDiagnostics = [
+        {
+          message: "Variable 'x' is unused",
+          range: {
+            start: { line: 4, character: 2 },
+            end: { line: 4, character: 7 },
+          },
+          severity: 1, // Warning
+          source: "typescript",
+          code: 6133,
+        },
+      ];
+
+      const mockDoc = { uri: { fsPath: "/test.ts" } } as any;
+      const result = bridge.getActiveDiagnostics(mockDoc);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        message: "Variable 'x' is unused",
+        lineNumber: 5,
+        startColumn: 3,
+        endColumn: 8,
+        severity: "warning",
+        source: "typescript",
+        code: 6133,
+      });
+    });
+  });
+
   describe("Extension Activation", () => {
-    it("registers commands, sidebar provider, and wires focus command", async () => {
+    it("registers commands, sidebar provider, completion provider, and wires focus command", async () => {
       const subscriptions: any[] = [];
 
       // Create fake daemon running
@@ -309,6 +462,7 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       expect(mockCommands.has("aether.inlineEdit")).toBe(true);
       expect(mockCommands.has("aether.openManager")).toBe(true);
       expect(registeredViews).toContain("aether.sidebar");
+      expect(registeredCompletionProviders).toHaveLength(1);
 
       // Verify aether.chat.focus executes aether.sidebar.focus
       const chatFocusHandler = mockCommands.get("aether.chat.focus");

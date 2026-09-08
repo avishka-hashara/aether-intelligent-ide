@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -214,5 +214,73 @@ describe("Aether Agent Daemon (@aether/daemon)", () => {
     } finally {
       await server.close();
     }
+  });
+
+  describe("POST /v1/inline/completion", () => {
+    it("validates request body and rejects missing fields", async () => {
+      const token = "completion-test-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/completion",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            prefix: "const x = ",
+            // missing suffix, filepath, language
+          },
+        });
+
+        expect(res.statusCode).toBe(400);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("returns completion text streamed from OpenRouterClient", async () => {
+      const token = "completion-test-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      const prevKey = process.env.OPENROUTER_API_KEY;
+      process.env.OPENROUTER_API_KEY = "sk-test-key";
+
+      // Mock OpenRouterClient.prototype.chat
+      const { OpenRouterClient } = await import("@aether/providers");
+      const chatSpy = vi.spyOn(OpenRouterClient.prototype, "chat").mockImplementation(
+        async function* () {
+          yield { type: "text_delta", text: "123;" };
+          yield { type: "done" };
+        }
+      );
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/completion",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            prefix: "const x = ",
+            suffix: "\nconsole.log(x);",
+            filepath: "/workspace/index.ts",
+            language: "typescript",
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ completion: "123;" });
+        expect(chatSpy).toHaveBeenCalled();
+      } finally {
+        chatSpy.mockRestore();
+        process.env.OPENROUTER_API_KEY = prevKey;
+        await server.close();
+      }
+    });
   });
 });

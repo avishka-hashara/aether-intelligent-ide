@@ -3,17 +3,30 @@ import { DaemonClient } from "./daemon-client.js";
 import { DaemonManager } from "./daemon-manager.js";
 import { WsClient } from "./ws-client.js";
 import { AgentSidebarProvider } from "./sidebar.js";
+import { AetherCompletionProvider } from "./completion.js";
+import { ContextBridge } from "./context-bridge.js";
 
 export * from "./daemon-client.js";
 export * from "./daemon-manager.js";
 export * from "./ws-client.js";
 export * from "./sidebar.js";
+export * from "./completion.js";
+export * from "./context-bridge.js";
 
 let wsClient: WsClient | null = null;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const daemonClient = new DaemonClient();
   const daemonManager = new DaemonManager(daemonClient);
+
+  // Register inline completion provider
+  const completionProvider = new AetherCompletionProvider(daemonClient);
+  context.subscriptions.push(
+    vscode.languages.registerInlineCompletionItemProvider(
+      { pattern: "**" },
+      completionProvider
+    )
+  );
 
   // Instantiate AgentSidebarProvider and register view provider
   const sidebarProvider = new AgentSidebarProvider(context.extensionUri);

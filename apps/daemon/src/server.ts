@@ -34,6 +34,16 @@ export const CreateMissionBody = Type.Object({
 
 export type CreateMissionBodyType = Static<typeof CreateMissionBody>;
 
+export const InlineCompletionBody = Type.Object({
+  prefix: Type.String(),
+  suffix: Type.String(),
+  filepath: Type.String(),
+  language: Type.String(),
+  model: Type.Optional(Type.String()),
+});
+
+export type InlineCompletionBodyType = Static<typeof InlineCompletionBody>;
+
 export interface DaemonServerOptions {
   token?: string;
   logger?: boolean;
@@ -169,6 +179,91 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
           status: "queued",
           streamUrl: `ws://127.0.0.1:${port}/v1/stream`,
         });
+      }
+    );
+
+    // POST /v1/inline/completion
+    v1.post(
+      "/inline/completion",
+      {
+        schema: {
+          body: InlineCompletionBody,
+        },
+      },
+      async (request, reply) => {
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          return reply.status(500).send({
+            error: "missing_api_key",
+            message: "OPENROUTER_API_KEY environment variable is missing",
+          });
+        }
+
+        const { prefix, suffix, model: reqModel } = request.body;
+        const model = reqModel || "google/gemini-2.5-flash";
+
+        const abortController = new AbortController();
+        const onAborted = () => {
+          abortController.abort();
+        };
+        request.raw.on("aborted", onAborted);
+        request.raw.on("close", () => {
+          if (request.raw.destroyed) {
+            abortController.abort();
+          }
+        });
+
+        const provider = new OpenRouterClient(apiKey);
+        const systemPrompt =
+          "You are an inline code completion engine. Output ONLY the exact code that belongs between the PREFIX and SUFFIX. Do not include markdown formatting or explanations.";
+        const userPrompt = `PREFIX:\n${prefix}\n\nSUFFIX:\n${suffix}`;
+
+        let completion = "";
+
+        try {
+          const stream = provider.chat(
+            {
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.1,
+              max_tokens: 256,
+            },
+            abortController.signal
+          );
+
+          for await (const event of stream) {
+            if (abortController.signal.aborted) {
+              break;
+            }
+            if (event.type === "text_delta") {
+              completion += event.text;
+            } else if (event.type === "error") {
+              return reply.status(500).send({
+                error: "provider_error",
+                message: event.message,
+              });
+            }
+          }
+        } catch (err: any) {
+          if (abortController.signal.aborted) {
+            return reply.status(499).send({ error: "client_aborted" });
+          }
+          return reply.status(500).send({
+            error: "completion_error",
+            message: err?.message || String(err),
+          });
+        } finally {
+          request.raw.off("aborted", onAborted);
+        }
+
+        if (abortController.signal.aborted) {
+          return reply.status(499).send({ error: "client_aborted" });
+        }
+
+        return { completion };
       }
     );
 
