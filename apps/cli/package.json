@@ -1,0 +1,28 @@
+{
+  "name": "@aether/cli",
+  "version": "1.0.0",
+  "description": "Headless CLI for Aether Intelligent IDE",
+  "main": "./dist/index.js",
+  "bin": {
+    "aether": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "type": "module",
+  "dependencies": {
+    "@aether/agent-core": "workspace:*",
+    "@aether/protocol": "workspace:*",
+    "@aether/providers": "workspace:*",
+    "@aether/tools": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "chalk": "^6.0.0",
+    "commander": "^15.0.0",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "tsup": "^8.5.1"
+  }
+}

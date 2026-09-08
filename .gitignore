@@ -13,3 +13,5 @@ dist
 *.tsbuildinfo
 .env
 .env.*
+.turbo
+.aether
