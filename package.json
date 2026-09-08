@@ -26,6 +26,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.4.1",
     "@types/vscode": "^1.136.0",
+    "@types/ws": "^8.18.1",
     "@typescript-eslint/parser": "^8.69.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^10.10.0",

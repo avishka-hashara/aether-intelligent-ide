@@ -6,6 +6,7 @@
     "vscode": "^1.80.0"
   },
   "main": "./dist/extension.js",
+  "type": "module",
   "activationEvents": [],
   "contributes": {
     "commands": [
@@ -21,18 +22,38 @@
         "command": "aether.openManager",
         "title": "Aether: Open Mission Manager"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "aether-view-container",
+          "title": "Aether",
+          "icon": "$(hub)"
+        }
+      ]
+    },
+    "views": {
+      "aether-view-container": [
+        {
+          "type": "webview",
+          "id": "aether.sidebar",
+          "name": "Agent Chat"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsup",
     "watch": "tsup --watch"
   },
   "dependencies": {
-    "@aether/protocol": "workspace:*"
+    "@aether/protocol": "workspace:*",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "@types/vscode": "^1.80.0",
+    "@types/ws": "^8.18.0",
     "tsup": "^8.5.1",
     "typescript": "~5.6.3"
   }
