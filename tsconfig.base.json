@@ -7,11 +7,19 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
+        "noEmit": true,
         "baseUrl": ".",
         "paths": {
             "@aether/*": [
+                "packages/*/dist/index.d.ts",
+                "packages/*/src/index.ts",
                 "packages/*/src"
             ]
         }
-    }
+    },
+    "exclude": [
+        "docs",
+        "node_modules",
+        "dist"
+    ]
 }

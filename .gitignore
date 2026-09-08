@@ -10,3 +10,6 @@ docs/README.md
 docs/protocol.ts
 node_modules
 dist
+*.tsbuildinfo
+.env
+.env.*

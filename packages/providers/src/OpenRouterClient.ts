@@ -78,9 +78,13 @@ export class OpenRouterClient implements LLMProvider {
       if (signal?.aborted || err?.name === "AbortError") {
         return;
       }
+      const msg =
+        err instanceof Error
+          ? `${err.message}${err.cause ? ` (${(err.cause as any)?.message || err.cause})` : ""}`
+          : String(err);
       yield {
         type: "error",
-        message: err instanceof Error ? err.message : String(err),
+        message: msg,
       };
       return;
     }
