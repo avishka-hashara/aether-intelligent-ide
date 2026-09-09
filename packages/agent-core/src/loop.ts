@@ -4,6 +4,10 @@ import { LLMProvider } from "@aether/providers";
 import { BudgetTracker, BudgetExhaustedError } from "./budget.js";
 import { LoopDetector } from "./loop-detector.js";
 
+export interface ArtifactStoreLike {
+  consumeSteeringInbox(missionId: string): Promise<Array<{ id: string; body: string; source?: string }>>;
+}
+
 export interface RunAgentLoopOptions {
   provider: LLMProvider;
   systemPrompt: string;
@@ -15,6 +19,7 @@ export interface RunAgentLoopOptions {
   missionId?: string;
   runId?: string;
   signal?: AbortSignal;
+  artifactStore?: ArtifactStoreLike;
 }
 
 function formatTools(tools: any): any[] {
@@ -162,6 +167,28 @@ export async function* runAgentLoop(
     if (signal?.aborted) {
       yield createEvent("run.aborted", { reason: "AbortSignal triggered" });
       break;
+    }
+
+    // Mid-run steering: check steering inbox for user guidance before calling provider.chat
+    if (options.artifactStore) {
+      try {
+        const pendingMessages = await options.artifactStore.consumeSteeringInbox(missionId);
+        if (pendingMessages && pendingMessages.length > 0) {
+          for (const msg of pendingMessages) {
+            messages.push({
+              role: "user",
+              content: `[STEERING FEEDBACK]: ${msg.body}`,
+            });
+            yield createEvent("mission.steered", {
+              messageId: msg.id,
+              source: msg.source,
+              body: msg.body,
+            });
+          }
+        }
+      } catch {
+        // Continue loop if steering check fails
+      }
     }
 
     // 1. Budget check before each turn

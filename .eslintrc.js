@@ -40,6 +40,8 @@ export default [
             "packages/agent-core/**/*",
             "packages/tools/**/*",
             "packages/providers/**/*",
+            "packages/sandbox/**/*",
+            "packages/artifacts/**/*",
           ],
           mode: "full",
         },

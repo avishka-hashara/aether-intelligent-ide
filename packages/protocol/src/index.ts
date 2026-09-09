@@ -31,3 +31,5 @@ export interface ToolResult {
     durationMs?: number;
     warnings?: string[];
 }
+
+export * from "./artifacts.js";

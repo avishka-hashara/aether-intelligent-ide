@@ -109,6 +109,56 @@ CREATE TABLE IF NOT EXISTS cost_entries (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_cost_mission ON cost_entries(mission_id, created_at);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id TEXT NOT NULL,
+  mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+  run_id TEXT,
+  type TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  requires_approval INTEGER NOT NULL DEFAULT 0,
+  body_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS ix_artifacts_mission ON artifacts(mission_id, status);
+
+CREATE TABLE IF NOT EXISTS artifact_comments (
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  artifact_version INTEGER NOT NULL,
+  anchor_json TEXT,
+  author TEXT NOT NULL,
+  body TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS steering_inbox (
+  id TEXT PRIMARY KEY,
+  mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+  source TEXT NOT NULL,
+  body TEXT NOT NULL,
+  consumed_at TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  mission_id TEXT NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  detail_json TEXT,
+  decision TEXT,
+  decided_by TEXT,
+  scope TEXT,
+  comment TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
 `;
 
 export interface InitDBResult {

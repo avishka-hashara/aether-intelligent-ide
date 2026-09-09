@@ -5,6 +5,7 @@ import {
   real,
   index,
   uniqueIndex,
+  primaryKey,
 } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 
@@ -150,6 +151,73 @@ export const costEntries = sqliteTable(
   ]
 );
 
+// 8. Artifacts
+export const artifacts = sqliteTable(
+  "artifacts",
+  {
+    id: text("id").notNull(),
+    missionId: text("mission_id")
+      .notNull()
+      .references(() => missions.id, { onDelete: "cascade" }),
+    runId: text("run_id"),
+    type: text("type").notNull(),
+    version: integer("version").notNull(),
+    title: text("title").notNull(),
+    status: text("status").notNull(),
+    requiresApproval: integer("requires_approval", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    bodyJson: text("body_json").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.id, table.version] }),
+    index("ix_artifacts_mission").on(table.missionId, table.status),
+  ]
+);
+
+// 9. Artifact Comments
+export const artifactComments = sqliteTable("artifact_comments", {
+  id: text("id").primaryKey(),
+  artifactId: text("artifact_id").notNull(),
+  artifactVersion: integer("artifact_version").notNull(),
+  anchorJson: text("anchor_json"),
+  author: text("author").notNull(),
+  body: text("body").notNull(),
+  status: text("status").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+// 10. Steering Inbox
+export const steeringInbox = sqliteTable("steering_inbox", {
+  id: text("id").primaryKey(),
+  missionId: text("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  source: text("source").notNull(),
+  body: text("body").notNull(),
+  consumedAt: text("consumed_at"),
+  createdAt: text("created_at").notNull(),
+});
+
+// 11. Approvals
+export const approvals = sqliteTable("approvals", {
+  id: text("id").primaryKey(),
+  missionId: text("mission_id")
+    .notNull()
+    .references(() => missions.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  summary: text("summary").notNull(),
+  detailJson: text("detail_json"),
+  decision: text("decision"),
+  decidedBy: text("decided_by"),
+  scope: text("scope"),
+  comment: text("comment"),
+  createdAt: text("created_at").notNull(),
+  decidedAt: text("decided_at"),
+});
+
 // ---------------------------------------------------- Relations
 export const workspacesRelations = relations(workspaces, ({ many }) => ({
   missions: many(missions),
@@ -163,6 +231,9 @@ export const missionsRelations = relations(missions, ({ one, many }) => ({
   runs: many(agentRuns),
   events: many(missionEvents),
   costEntries: many(costEntries),
+  artifacts: many(artifacts),
+  steeringInbox: many(steeringInbox),
+  approvals: many(approvals),
 }));
 
 export const agentRunsRelations = relations(agentRuns, ({ one, many }) => ({
@@ -203,6 +274,27 @@ export const missionEventsRelations = relations(missionEvents, ({ one }) => ({
 export const costEntriesRelations = relations(costEntries, ({ one }) => ({
   mission: one(missions, {
     fields: [costEntries.missionId],
+    references: [missions.id],
+  }),
+}));
+
+export const artifactsRelations = relations(artifacts, ({ one }) => ({
+  mission: one(missions, {
+    fields: [artifacts.missionId],
+    references: [missions.id],
+  }),
+}));
+
+export const steeringInboxRelations = relations(steeringInbox, ({ one }) => ({
+  mission: one(missions, {
+    fields: [steeringInbox.missionId],
+    references: [missions.id],
+  }),
+}));
+
+export const approvalsRelations = relations(approvals, ({ one }) => ({
+  mission: one(missions, {
+    fields: [approvals.missionId],
     references: [missions.id],
   }),
 }));
