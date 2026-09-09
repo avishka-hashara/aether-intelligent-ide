@@ -85,15 +85,7 @@ export class ManagerPanelManager {
     webview: vscode.Webview,
     context: vscode.ExtensionContext
   ): string {
-    const distCandidates = [
-      path.resolve(context.extensionPath, "..", "manager-ui", "dist"),
-      path.resolve(context.extensionPath, "dist", "manager-ui"),
-      path.resolve(context.extensionPath, "manager-ui"),
-    ];
-
-    const distPath = distCandidates.find((dir) =>
-      fs.existsSync(path.join(dir, "index.html"))
-    );
+    const distPath = ManagerPanelManager.getDistPath(context);
 
     if (!distPath) {
       return `<!DOCTYPE html>
