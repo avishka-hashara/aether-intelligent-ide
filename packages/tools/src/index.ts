@@ -10,6 +10,14 @@ import {
 } from "./fs.js";
 import { grep, GrepInput, GrepMatch } from "./search.js";
 import { execCommand, TerminalExecInput } from "./terminal.js";
+import {
+  updateTask,
+  setBlackboard,
+  TaskUpdateInput,
+  BlackboardSetInput,
+  BlackboardStore,
+  InMemoryBlackboard,
+} from "./blackboard.js";
 import { ToolResult } from "@aether/protocol";
 
 export * from "./security.js";
@@ -17,13 +25,25 @@ export * from "./fs.js";
 export * from "./search.js";
 export * from "./terminal.js";
 export * from "./schemas.js";
+export * from "./blackboard.js";
 
 /**
  * ToolRegistry encapsulates a workspaceRoot and provides bound tool instances
- * matching the canonical tool namespace: fs.read, fs.list, fs.glob, fs.patch, search.grep, terminal.exec.
+ * matching the canonical tool namespace: fs.read, fs.list, fs.glob, fs.patch, search.grep, terminal.exec, task.update, blackboard.set.
  */
 export class ToolRegistry {
-  constructor(readonly workspaceRoot: string) {}
+  private readonly blackboardStore: BlackboardStore;
+
+  constructor(
+    readonly workspaceRoot: string,
+    blackboardStore?: BlackboardStore
+  ) {
+    this.blackboardStore = blackboardStore ?? new InMemoryBlackboard();
+  }
+
+  get blackboardState(): BlackboardStore {
+    return this.blackboardStore;
+  }
 
   readonly fs = {
     read: (input: ReadFileInput): Promise<ToolResult> =>
@@ -44,5 +64,19 @@ export class ToolRegistry {
   readonly terminal = {
     exec: (input: TerminalExecInput): Promise<ToolResult> =>
       execCommand(this.workspaceRoot, input),
+  };
+
+  readonly task = {
+    update: (input: TaskUpdateInput): Promise<ToolResult> =>
+      updateTask(input, this.blackboardStore),
+  };
+
+  readonly blackboard = {
+    set: (input: BlackboardSetInput): Promise<ToolResult> =>
+      setBlackboard(input, this.blackboardStore),
+    get: <T = unknown>(key: string): T | undefined =>
+      this.blackboardStore.get<T>(key),
+    getSnapshot: (): Record<string, unknown> =>
+      this.blackboardStore.getSnapshot(),
   };
 }

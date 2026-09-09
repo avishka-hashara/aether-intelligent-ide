@@ -150,6 +150,49 @@ export const terminalExecSchema = {
   additionalProperties: false,
 } as const;
 
+export const taskUpdateSchema = {
+  type: "object",
+  properties: {
+    taskId: {
+      type: "string",
+      description: "Unique identifier of the task being updated.",
+    },
+    title: {
+      type: "string",
+      description: "Optional title or short summary of the task.",
+    },
+    status: {
+      type: "string",
+      description:
+        "Current status of the task (e.g. pending, in_progress, completed, failed).",
+    },
+    filesTouched: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+      description: "List of file paths touched or modified by this task.",
+    },
+  },
+  required: ["taskId"],
+  additionalProperties: false,
+} as const;
+
+export const blackboardSetSchema = {
+  type: "object",
+  properties: {
+    key: {
+      type: "string",
+      description: "State key to store in the mission blackboard.",
+    },
+    value: {
+      description: "Value to associate with the key.",
+    },
+  },
+  required: ["key", "value"],
+  additionalProperties: false,
+} as const;
+
 export const toolSchemas = {
   "fs.read": fsReadSchema,
   "fs.list": fsListSchema,
@@ -157,4 +200,6 @@ export const toolSchemas = {
   "fs.patch": fsPatchSchema,
   "search.grep": searchGrepSchema,
   "terminal.exec": terminalExecSchema,
+  "task.update": taskUpdateSchema,
+  "blackboard.set": blackboardSetSchema,
 } as const;

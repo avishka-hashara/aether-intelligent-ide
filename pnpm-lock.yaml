@@ -332,6 +332,12 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/sandbox:
+    dependencies:
+      '@aether/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/tools:
     dependencies:
       '@aether/protocol':
