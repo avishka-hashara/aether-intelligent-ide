@@ -25,10 +25,28 @@ vi.mock("vscode", () => ({
   window: {
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
+    showWarningMessage: vi.fn(),
+    showInputBox: vi.fn(),
+    withProgress: vi.fn(async (_options: any, task: any) =>
+      task(
+        { report: vi.fn() },
+        { isCancellationRequested: false, onCancellationRequested: vi.fn() }
+      )
+    ),
+    createTextEditorDecorationType: vi.fn((opts: any) => ({
+      dispose: vi.fn(),
+      opts,
+    })),
     registerWebviewViewProvider: vi.fn((viewId: string, _provider: any) => {
       registeredViews.push(viewId);
       return { dispose: vi.fn() };
     }),
+    activeTextEditor: undefined as any,
+  },
+  ProgressLocation: {
+    SourceControl: 1,
+    Window: 10,
+    Notification: 15,
   },
   languages: {
     registerInlineCompletionItemProvider: vi.fn((_selector: any, provider: any) => {
@@ -59,12 +77,15 @@ vi.mock("vscode", () => ({
   },
 }));
 
+import * as vscode from "vscode";
 import { DaemonClient } from "./daemon-client.js";
 import { DaemonManager } from "./daemon-manager.js";
 import { WsClient } from "./ws-client.js";
 import { AgentSidebarProvider } from "./sidebar.js";
 import { AetherCompletionProvider } from "./completion.js";
 import { ContextBridge } from "./context-bridge.js";
+import { InlineDiffManager } from "./inline-diff.js";
+import { executeInlineEdit } from "./inline-edit.js";
 import { activate, deactivate } from "./extension.js";
 import { MissionEvent } from "@aether/protocol";
 
@@ -470,7 +491,255 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       chatFocusHandler!();
       expect(executedCommands).toContain("aether.sidebar.focus");
 
+      // Verify aether.inlineEdit is registered as an async handler
+      const inlineEditHandler = mockCommands.get("aether.inlineEdit");
+      expect(inlineEditHandler).toBeDefined();
+
       deactivate();
+    });
+  });
+
+  describe("InlineDiffManager", () => {
+    it("configures added and removed decoration types with required styles", () => {
+      const manager = new InlineDiffManager();
+
+      expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backgroundColor: "rgba(0, 255, 0, 0.2)",
+        })
+      );
+      expect(vscode.window.createTextEditorDecorationType).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backgroundColor: "rgba(255, 0, 0, 0.2)",
+          textDecoration: "line-through",
+        })
+      );
+
+      expect(manager.addedDecoration).toBeDefined();
+      expect(manager.removedDecoration).toBeDefined();
+
+      const disposeSpyAdded = vi.spyOn(manager.addedDecoration, "dispose");
+      const disposeSpyRemoved = vi.spyOn(manager.removedDecoration, "dispose");
+      manager.dispose();
+      expect(disposeSpyAdded).toHaveBeenCalled();
+      expect(disposeSpyRemoved).toHaveBeenCalled();
+    });
+
+    it("parses diff, edits document, and applies decorations to added lines", async () => {
+      const manager = new InlineDiffManager();
+      const diffStr = `--- a/file.ts
++++ b/file.ts
+@@ -1,2 +1,3 @@
+ const a = 1;
+-const b = 2;
++const b = 3;
++const c = 4;
+`;
+
+      const originalLines = ["const a = 1;", "const b = 2;"];
+      let currentDocText = originalLines.join("\n");
+
+      const mockEditor: any = {
+        document: {
+          getText: vi.fn(() => currentDocText),
+          lineCount: 2,
+          lineAt: vi.fn((idx: number) => ({
+            text: idx === 0 ? "const a = 1;" : idx === 1 ? "const b = 3;" : "const c = 4;",
+          })),
+        },
+        edit: vi.fn(async (callback: (builder: any) => void) => {
+          const builder = {
+            replace: vi.fn((_range: any, text: string) => {
+              currentDocText = text;
+            }),
+          };
+          callback(builder);
+          // Simulate updated lineCount
+          mockEditor.document.lineCount = 3;
+          return true;
+        }),
+        setDecorations: vi.fn(),
+      };
+
+      const result = await manager.applyAndRenderDiff(mockEditor, diffStr);
+      expect(result).toBe(true);
+      expect(mockEditor.edit).toHaveBeenCalled();
+      expect(mockEditor.setDecorations).toHaveBeenCalledWith(
+        manager.addedDecoration,
+        expect.any(Array)
+      );
+
+      // Verify decoration ranges were calculated for added lines
+      const addedCalls = mockEditor.setDecorations.mock.calls.find(
+        (call: any[]) => call[0] === manager.addedDecoration
+      );
+      expect(addedCalls).toBeDefined();
+      expect(addedCalls[1].length).toBe(2); // 2 added lines
+
+      // Test clearDecorations
+      manager.clearDecorations(mockEditor);
+      expect(mockEditor.setDecorations).toHaveBeenCalledWith(manager.addedDecoration, []);
+      expect(mockEditor.setDecorations).toHaveBeenCalledWith(manager.removedDecoration, []);
+    });
+
+    it("returns false gracefully on invalid diff", async () => {
+      const manager = new InlineDiffManager();
+      const mockEditor: any = {
+        document: {
+          getText: vi.fn(() => "hello world"),
+          lineCount: 1,
+        },
+        edit: vi.fn(),
+        setDecorations: vi.fn(),
+      };
+
+      const result = await manager.applyAndRenderDiff(mockEditor, "not a valid diff");
+      expect(result).toBe(false);
+      expect(mockEditor.edit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("executeInlineEdit", () => {
+    let mockEditor: any;
+    let mockDaemonClient: any;
+    let diffManager: InlineDiffManager;
+
+    beforeEach(() => {
+      diffManager = new InlineDiffManager();
+      mockDaemonClient = {
+        getConnectionInfo: vi.fn(() => ({
+          port: 54321,
+          token: "inline-edit-token",
+        })),
+      };
+
+      mockEditor = {
+        document: {
+          uri: { fsPath: "/workspace/src/test.ts" },
+          getText: vi.fn(() => "function greet() {\n  return 'hello';\n}\n"),
+          lineCount: 3,
+          lineAt: vi.fn((idx: number) => ({ text: "line " + idx })),
+        },
+        selection: {
+          start: { line: 0, character: 0 },
+          end: { line: 2, character: 1 },
+        },
+        edit: vi.fn(async (cb: any) => {
+          cb({ replace: vi.fn() });
+          return true;
+        }),
+        setDecorations: vi.fn(),
+      };
+
+      vscode.window.activeTextEditor = mockEditor;
+    });
+
+    afterEach(() => {
+      vscode.window.activeTextEditor = undefined;
+    });
+
+    it("does nothing if no activeTextEditor exists", async () => {
+      vscode.window.activeTextEditor = undefined;
+      await executeInlineEdit(mockDaemonClient, diffManager);
+      expect(vscode.window.showInputBox).not.toHaveBeenCalled();
+    });
+
+    it("does nothing if user cancels the input prompt", async () => {
+      vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce(undefined);
+      await executeInlineEdit(mockDaemonClient, diffManager);
+      expect(vscode.window.withProgress).not.toHaveBeenCalled();
+    });
+
+    it("executes inline edit, applies diff, and clears decorations on Accept", async () => {
+      vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce("make async");
+
+      const fakeDiff = `--- a/test.ts
++++ b/test.ts
+@@ -1,3 +1,3 @@
+-function greet() {
++async function greet() {
+   return 'hello';
+ }
+`;
+      const fetchSpy = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ diff: fakeDiff }),
+      });
+      vi.stubGlobal("fetch", fetchSpy);
+
+      vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce("Accept" as any);
+
+      await executeInlineEdit(mockDaemonClient, diffManager);
+
+      // Verify progress notification
+      expect(vscode.window.withProgress).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Aether is editing...",
+        }),
+        expect.any(Function)
+      );
+
+      // Verify network request to daemon
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "http://127.0.0.1:54321/v1/inline/edit",
+        expect.objectContaining({
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer inline-edit-token",
+          },
+          body: JSON.stringify({
+            filepath: "/workspace/src/test.ts",
+            instruction: "make async",
+            fileContent: "function greet() {\n  return 'hello';\n}\n",
+            selectionStartLine: 1,
+            selectionEndLine: 3,
+          }),
+        })
+      );
+
+      // Verify follow-up prompt
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        "Accept changes?",
+        "Accept",
+        "Reject"
+      );
+
+      // Accept does not trigger undo
+      expect(executedCommands).not.toContain("undo");
+
+      // Decorations are cleared
+      expect(mockEditor.setDecorations).toHaveBeenCalledWith(diffManager.addedDecoration, []);
+    });
+
+    it("executes undo when user selects Reject", async () => {
+      vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce("rename function");
+
+      const fakeDiff = `--- a/test.ts
++++ b/test.ts
+@@ -1,3 +1,3 @@
+-function greet() {
++function hello() {
+   return 'hello';
+ }
+`;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ diff: fakeDiff }),
+        })
+      );
+
+      vi.mocked(vscode.window.showInformationMessage).mockResolvedValueOnce("Reject" as any);
+
+      await executeInlineEdit(mockDaemonClient, diffManager);
+
+      // Reject triggers undo command
+      expect(executedCommands).toContain("undo");
+
+      // Decorations are cleared
+      expect(mockEditor.setDecorations).toHaveBeenCalledWith(diffManager.addedDecoration, []);
     });
   });
 });

@@ -5,6 +5,8 @@ import { WsClient } from "./ws-client.js";
 import { AgentSidebarProvider } from "./sidebar.js";
 import { AetherCompletionProvider } from "./completion.js";
 import { ContextBridge } from "./context-bridge.js";
+import { InlineDiffManager } from "./inline-diff.js";
+import { executeInlineEdit } from "./inline-edit.js";
 
 export * from "./daemon-client.js";
 export * from "./daemon-manager.js";
@@ -12,6 +14,8 @@ export * from "./ws-client.js";
 export * from "./sidebar.js";
 export * from "./completion.js";
 export * from "./context-bridge.js";
+export * from "./inline-diff.js";
+export * from "./inline-edit.js";
 
 let wsClient: WsClient | null = null;
 
@@ -56,6 +60,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
+  const inlineDiffManager = new InlineDiffManager();
+  context.subscriptions.push(inlineDiffManager);
+
   // Register commands
   const commandChatFocus = vscode.commands.registerCommand(
     "aether.chat.focus",
@@ -66,8 +73,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const commandInlineEdit = vscode.commands.registerCommand(
     "aether.inlineEdit",
-    () => {
-      vscode.window.showInformationMessage("Aether: Command Executed");
+    async () => {
+      await executeInlineEdit(daemonClient, inlineDiffManager);
     }
   );
 

@@ -13,7 +13,7 @@ import { createDaemonServer } from "./server.js";
 import { initDB, missions } from "@aether/cli";
 import { MissionEvent } from "@aether/protocol";
 
-describe("Aether Agent Daemon (@aether/daemon)", () => {
+describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
   let tmpWorkspace: string;
 
   beforeEach(() => {
@@ -275,6 +275,141 @@ describe("Aether Agent Daemon (@aether/daemon)", () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.json()).toEqual({ completion: "123;" });
+        expect(chatSpy).toHaveBeenCalled();
+      } finally {
+        chatSpy.mockRestore();
+        process.env.OPENROUTER_API_KEY = prevKey;
+        await server.close();
+      }
+    });
+  });
+
+  describe("POST /v1/inline/edit", () => {
+    it("enforces authentication on /v1/inline/edit", async () => {
+      const token = "edit-auth-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/edit",
+          payload: {
+            filepath: "/workspace/index.ts",
+            instruction: "make this async",
+            fileContent: "function foo() {}",
+            selectionStartLine: 1,
+            selectionEndLine: 1,
+          },
+        });
+        expect(res.statusCode).toBe(401);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("returns 500 when OPENROUTER_API_KEY is missing", async () => {
+      const token = "edit-missing-key-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      const prevKey = process.env.OPENROUTER_API_KEY;
+      delete process.env.OPENROUTER_API_KEY;
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/edit",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            filepath: "/workspace/index.ts",
+            instruction: "make this async",
+            fileContent: "function foo() {}",
+            selectionStartLine: 1,
+            selectionEndLine: 1,
+          },
+        });
+
+        expect(res.statusCode).toBe(500);
+        expect(res.json().error).toBe("missing_api_key");
+      } finally {
+        process.env.OPENROUTER_API_KEY = prevKey;
+        await server.close();
+      }
+    });
+
+    it("validates request body against InlineEditBody schema", async () => {
+      const token = "edit-schema-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/edit",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            filepath: "/workspace/index.ts",
+            // missing instruction, fileContent, etc.
+          },
+        });
+
+        expect(res.statusCode).toBe(400);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("generates and returns cleaned unified diff from OpenRouterClient", async () => {
+      const token = "edit-success-token";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      const prevKey = process.env.OPENROUTER_API_KEY;
+      process.env.OPENROUTER_API_KEY = "sk-test-key";
+
+      const sampleDiff = `\`\`\`diff
+--- a/index.ts
++++ b/index.ts
+@@ -1,1 +1,1 @@
+-function foo() {}
++async function foo() {}
+\`\`\``;
+
+      const { OpenRouterClient } = await import("@aether/providers");
+      const chatSpy = vi.spyOn(OpenRouterClient.prototype, "chat").mockImplementation(
+        async function* () {
+          yield { type: "text_delta", text: sampleDiff };
+          yield { type: "done" };
+        }
+      );
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/inline/edit",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            filepath: "/workspace/index.ts",
+            instruction: "make this async",
+            fileContent: "function foo() {}",
+            selectionStartLine: 1,
+            selectionEndLine: 1,
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const json = res.json();
+        expect(json.diff).toContain("--- a/index.ts");
+        expect(json.diff).toContain("+async function foo() {}");
+        expect(json.diff.startsWith("```")).toBe(false);
+        expect(json.diff.endsWith("```")).toBe(false);
         expect(chatSpy).toHaveBeenCalled();
       } finally {
         chatSpy.mockRestore();

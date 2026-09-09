@@ -44,6 +44,17 @@ export const InlineCompletionBody = Type.Object({
 
 export type InlineCompletionBodyType = Static<typeof InlineCompletionBody>;
 
+export const InlineEditBody = Type.Object({
+  filepath: Type.String(),
+  instruction: Type.String(),
+  fileContent: Type.String(),
+  selectionStartLine: Type.Number(),
+  selectionEndLine: Type.Number(),
+  model: Type.Optional(Type.String()),
+});
+
+export type InlineEditBodyType = Static<typeof InlineEditBody>;
+
 export interface DaemonServerOptions {
   token?: string;
   logger?: boolean;
@@ -264,6 +275,108 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
         }
 
         return { completion };
+      }
+    );
+
+    // POST /v1/inline/edit
+    v1.post(
+      "/inline/edit",
+      {
+        schema: {
+          body: InlineEditBody,
+        },
+      },
+      async (request, reply) => {
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+          return reply.status(500).send({
+            error: "missing_api_key",
+            message: "OPENROUTER_API_KEY environment variable is missing",
+          });
+        }
+
+        const {
+          filepath,
+          instruction,
+          fileContent,
+          selectionStartLine,
+          selectionEndLine,
+          model: reqModel,
+        } = request.body;
+        const model = reqModel || "anthropic/claude-3.5-sonnet";
+
+        const abortController = new AbortController();
+        const onAborted = () => {
+          abortController.abort();
+        };
+        request.raw.on("aborted", onAborted);
+        request.raw.on("close", () => {
+          if (request.raw.destroyed) {
+            abortController.abort();
+          }
+        });
+
+        const provider = new OpenRouterClient(apiKey);
+        const systemPrompt =
+          "You are an expert coder. Apply the user's instruction to the provided file content. Focus specifically on the lines indicated by the user's selection. Output ONLY a valid unified diff (a/ and b/ format) containing the changes. Do not use markdown blocks or explanations.";
+        const userPrompt = `File: ${filepath}\nTarget Selection Lines: ${selectionStartLine} to ${selectionEndLine}\nInstruction: ${instruction}\n\nFile Content:\n${fileContent}`;
+
+        let diffText = "";
+
+        try {
+          const stream = provider.chat(
+            {
+              model,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.1,
+            },
+            abortController.signal
+          );
+
+          for await (const event of stream) {
+            if (abortController.signal.aborted) {
+              break;
+            }
+            if (event.type === "text_delta") {
+              diffText += event.text;
+            } else if (event.type === "error") {
+              return reply.status(500).send({
+                error: "provider_error",
+                message: event.message,
+              });
+            }
+          }
+        } catch (err: any) {
+          if (abortController.signal.aborted) {
+            return reply.status(499).send({ error: "client_aborted" });
+          }
+          return reply.status(500).send({
+            error: "inline_edit_error",
+            message: err?.message || String(err),
+          });
+        } finally {
+          request.raw.off("aborted", onAborted);
+        }
+
+        if (abortController.signal.aborted) {
+          return reply.status(499).send({ error: "client_aborted" });
+        }
+
+        let cleanDiff = diffText.trim();
+        if (cleanDiff.startsWith("```diff")) {
+          cleanDiff = cleanDiff.slice(7);
+        } else if (cleanDiff.startsWith("```")) {
+          cleanDiff = cleanDiff.slice(3);
+        }
+        if (cleanDiff.endsWith("```")) {
+          cleanDiff = cleanDiff.slice(0, -3);
+        }
+        cleanDiff = cleanDiff.trim();
+
+        return { diff: cleanDiff };
       }
     );
 
