@@ -1,5 +1,7 @@
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import Fastify, { FastifyInstance } from "fastify";
 import websocketPlugin from "@fastify/websocket";
 import type { WebSocket } from "ws";
@@ -9,9 +11,11 @@ import { eq } from "drizzle-orm";
 import { MissionEvent } from "@aether/protocol";
 import { ToolRegistry, toolSchemas } from "@aether/tools";
 import { OpenRouterClient } from "@aether/providers";
-import { BudgetTracker, runAgentLoop } from "@aether/agent-core";
+import { BudgetTracker, runAgentLoop, MissionOrchestrator } from "@aether/agent-core";
 import { initDB, workspaces, missions, missionEvents } from "@aether/cli";
 import { createAuthPreHandler, generateToken } from "./auth.js";
+
+const execAsync = promisify(exec);
 
 const DEFAULT_SYSTEM_PROMPT = `You are Aether, an expert autonomous software engineer.
 You are running within the Aether Agent Daemon on a local repository.
@@ -58,17 +62,86 @@ export type InlineEditBodyType = Static<typeof InlineEditBody>;
 export interface DaemonServerOptions {
   token?: string;
   logger?: boolean;
+  orchestrator?: MissionOrchestrator;
 }
 
 export interface DaemonServerInstance {
   server: FastifyInstance;
   token: string;
   broadcastEvent: (event: MissionEvent) => void;
+  getOrchestrator?: (workspacePath: string) => MissionOrchestrator;
 }
 
 export function createDaemonServer(options: DaemonServerOptions = {}): DaemonServerInstance {
   const token = options.token ?? generateToken(32);
   const activeSockets = new Map<WebSocket, Set<string>>();
+  const orchestrators = new Map<string, MissionOrchestrator>();
+  const missionWorkspaceMap = new Map<
+    string,
+    { workspacePath: string; orchestrator: MissionOrchestrator }
+  >();
+
+  function getOrchestrator(workspacePath: string): MissionOrchestrator {
+    if (options.orchestrator) {
+      return options.orchestrator;
+    }
+    let orch = orchestrators.get(workspacePath);
+    if (!orch) {
+      const apiKey = process.env.OPENROUTER_API_KEY || "dummy-key";
+      const provider = new OpenRouterClient(apiKey);
+      orch = new MissionOrchestrator({
+        workspaceRoot: workspacePath,
+        provider,
+        concurrency: 5,
+        onEvent: (event) => {
+          try {
+            const { db } = initDB(workspacePath);
+            db.insert(missionEvents)
+              .values({
+                id: event.id,
+                missionId: event.missionId,
+                runId: event.runId ?? null,
+                turnId: event.turnId ?? null,
+                type: event.type,
+                payloadJson: JSON.stringify(event.payload),
+                ts: event.ts,
+              })
+              .run();
+          } catch {}
+          broadcastEvent(event);
+        },
+        onMissionStatusChange: (missionId, status, details) => {
+          try {
+            const { db } = initDB(workspacePath);
+            const now = new Date().toISOString();
+            const updates: any = {
+              status,
+              updatedAt: now,
+            };
+            if (
+              status === "completed" ||
+              status === "failed" ||
+              status === "cancelled"
+            ) {
+              updates.completedAt = now;
+            }
+            if (details?.spendUsd !== undefined) {
+              updates.spendUsd = details.spendUsd;
+            }
+            if (details?.tokensUsed !== undefined) {
+              updates.tokensUsed = details.tokensUsed;
+            }
+            db.update(missions)
+              .set(updates)
+              .where(eq(missions.id, missionId))
+              .run();
+          } catch {}
+        },
+      });
+      orchestrators.set(workspacePath, orch);
+    }
+    return orch;
+  }
 
   const server = Fastify({
     logger: options.logger ?? false,
@@ -117,78 +190,180 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
       },
       async (request, reply) => {
         const { workspaceId, goal, model, budget: reqBudget } = request.body;
-        const workspacePath = path.resolve(workspaceId);
+          const workspacePath = path.resolve(workspaceId);
 
-        // Initialize SQLite DB at <workspacePath>/.aether/aether.db
-        const { db, sqlite } = initDB(workspacePath);
+          // Initialize SQLite DB at <workspacePath>/.aether/aether.db
+          const { db, sqlite } = initDB(workspacePath);
 
-        const now = new Date().toISOString();
-        const missionId = `m_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+          const now = new Date().toISOString();
+          const missionId = `m_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
-        // Ensure workspace record exists
-        try {
-          db.insert(workspaces)
+          // Ensure workspace record exists
+          try {
+            db.insert(workspaces)
+              .values({
+                id: workspacePath,
+                rootPath: workspacePath,
+                name: path.basename(workspacePath),
+                createdAt: now,
+              })
+              .onConflictDoNothing()
+              .run();
+          } catch {
+            // Ignored if table already has workspace
+          }
+
+          const budget = {
+            maxUsd: reqBudget?.maxUsd ?? 2.0,
+            maxTokens: reqBudget?.maxTokens ?? 500000,
+            maxWallClockMs: reqBudget?.maxWallClockMs ?? 1800000,
+            maxToolCalls: reqBudget?.maxToolCalls ?? 100,
+          };
+
+          // Create mission record in SQLite
+          db.insert(missions)
             .values({
-              id: workspacePath,
-              rootPath: workspacePath,
-              name: path.basename(workspacePath),
+              id: missionId,
+              workspaceId: workspacePath,
+              goal,
+              surface: "daemon",
+              executionMode: "autonomous",
+              status: "queued",
+              isolation: "inplace",
+              policyProfile: "trusted",
+              budgetJson: JSON.stringify(budget),
+              spendUsd: 0,
+              tokensUsed: 0,
+              blackboardJson: "{}",
               createdAt: now,
+              updatedAt: now,
             })
-            .onConflictDoNothing()
             .run();
-        } catch {
-          // Ignored if table already has workspace
+
+          // Schedule mission through MissionOrchestrator.dispatch
+          const orchestrator = getOrchestrator(workspacePath);
+          missionWorkspaceMap.set(missionId, { workspacePath, orchestrator });
+
+          orchestrator
+            .dispatch(
+              missionId,
+              goal,
+              "HEAD",
+              budget,
+              model ?? "anthropic/claude-3.5-sonnet"
+            )
+            .catch((err) => {
+              server.log.error(
+                err,
+                `Mission ${missionId} orchestrator dispatch error`
+              );
+            });
+
+          if (sqlite) {
+            try {
+              sqlite.close();
+            } catch {}
+          }
+
+          // Determine server port
+          const addr = server.server.address();
+          const port = typeof addr === "object" && addr ? addr.port : 0;
+
+          return reply.status(202).send({
+            missionId,
+            status: "queued",
+            streamUrl: `ws://127.0.0.1:${port}/v1/stream`,
+          });
+        }
+    );
+
+    // POST /v1/missions/:id/cancel
+    v1.post<{ Params: { id: string } }>(
+      "/missions/:id/cancel",
+      async (request, reply) => {
+        const missionId = request.params.id;
+        const entry = missionWorkspaceMap.get(missionId);
+        const orchestrator = entry?.orchestrator ?? options.orchestrator;
+
+        if (orchestrator) {
+          orchestrator.cancel(missionId);
         }
 
-        const budget = {
-          maxUsd: reqBudget?.maxUsd ?? 2.0,
-          maxTokens: reqBudget?.maxTokens ?? 500000,
-          maxWallClockMs: reqBudget?.maxWallClockMs ?? 1800000,
-          maxToolCalls: reqBudget?.maxToolCalls ?? 100,
-        };
+        if (entry?.workspacePath) {
+          try {
+            const { db } = initDB(entry.workspacePath);
+            db.update(missions)
+              .set({
+                status: "cancelled",
+                updatedAt: new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+              })
+              .where(eq(missions.id, missionId))
+              .run();
+          } catch {}
+        }
 
-        // Create mission record in SQLite
-        db.insert(missions)
-          .values({
-            id: missionId,
-            workspaceId: workspacePath,
-            goal,
-            surface: "daemon",
-            executionMode: "autonomous",
-            status: "queued",
-            isolation: "inplace",
-            policyProfile: "trusted",
-            budgetJson: JSON.stringify(budget),
-            spendUsd: 0,
-            tokensUsed: 0,
-            blackboardJson: "{}",
-            createdAt: now,
-            updatedAt: now,
-          })
-          .run();
-
-        // Start agent loop asynchronously in the background (do not await)
-        startBackgroundMission({
+        broadcastEvent({
+          schemaVersion: 1,
+          seq: Date.now(),
+          id: crypto.randomUUID(),
           missionId,
-          workspacePath,
-          goal,
-          model: model ?? "anthropic/claude-3.5-sonnet",
-          budget,
-          db,
-          sqlite,
-          broadcastEvent,
-        }).catch((err) => {
-          server.log.error(err, `Background mission ${missionId} failed`);
+          ts: new Date().toISOString(),
+          type: "run.cancelled",
+          payload: { missionId, status: "cancelled" },
         });
 
-        // Determine server port
-        const addr = server.server.address();
-        const port = typeof addr === "object" && addr ? addr.port : 0;
-
-        return reply.status(202).send({
+        return reply.status(200).send({
           missionId,
-          status: "queued",
-          streamUrl: `ws://127.0.0.1:${port}/v1/stream`,
+          status: "cancelled",
+        });
+      }
+    );
+
+    // POST /v1/missions/:id/apply
+    v1.post<{ Params: { id: string } }>(
+      "/missions/:id/apply",
+      async (request, reply) => {
+        const missionId = request.params.id;
+        const entry = missionWorkspaceMap.get(missionId);
+        const workspacePath = entry?.workspacePath;
+
+        if (!workspacePath) {
+          return reply.status(404).send({
+            error: "mission_not_found",
+            message: `Mission ${missionId} not found in active workspace map`,
+          });
+        }
+
+        const branchName = `aether/${missionId}`;
+        try {
+          await execAsync(`git merge ${branchName}`, { cwd: workspacePath });
+        } catch (err: any) {
+          return reply.status(500).send({
+            error: "merge_failed",
+            message: `Failed to merge branch ${branchName}: ${err?.message || String(err)}`,
+          });
+        }
+
+        const orchestrator = entry.orchestrator ?? options.orchestrator;
+        if (orchestrator) {
+          await orchestrator.cleanupMission(missionId);
+        }
+
+        try {
+          const { db } = initDB(workspacePath);
+          db.update(missions)
+            .set({
+              status: "applied",
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(missions.id, missionId))
+            .run();
+        } catch {}
+
+        return reply.status(200).send({
+          missionId,
+          status: "applied",
         });
       }
     );

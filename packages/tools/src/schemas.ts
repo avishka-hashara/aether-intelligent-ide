@@ -193,6 +193,61 @@ export const blackboardSetSchema = {
   additionalProperties: false,
 } as const;
 
+export const codeSymbolsSchema = {
+  type: "object",
+  properties: {
+    path: {
+      type: "string",
+      description: "Directory or file to scan for symbols (defaults to '.').",
+    },
+    pattern: {
+      type: "string",
+      description: "Glob pattern to match files (e.g. '**/*.ts').",
+    },
+    maxResults: {
+      type: "integer",
+      minimum: 1,
+      description: "Maximum number of symbols to return (defaults to 200).",
+    },
+  },
+  required: [],
+  additionalProperties: false,
+} as const;
+
+export const subagentSpawnSchema = {
+  type: "object",
+  properties: {
+    role: {
+      type: "string",
+      description:
+        "Role or specialty of the sub-agent (e.g. 'scout', 'coder', 'reviewer').",
+    },
+    input: {
+      type: "string",
+      description: "Goal or instructions for the sub-agent.",
+    },
+    budget: {
+      type: "object",
+      properties: {
+        maxTokens: {
+          type: "integer",
+          minimum: 1,
+          description: "Optional token limit for the sub-agent.",
+        },
+        maxToolCalls: {
+          type: "integer",
+          minimum: 1,
+          description: "Optional tool call limit for the sub-agent.",
+        },
+      },
+      additionalProperties: false,
+      description: "Isolated budget configuration for the sub-agent.",
+    },
+  },
+  required: ["role", "input"],
+  additionalProperties: false,
+} as const;
+
 export const toolSchemas = {
   "fs.read": fsReadSchema,
   "fs.list": fsListSchema,
@@ -202,4 +257,6 @@ export const toolSchemas = {
   "terminal.exec": terminalExecSchema,
   "task.update": taskUpdateSchema,
   "blackboard.set": blackboardSetSchema,
+  "code.symbols": codeSymbolsSchema,
+  "subagent.spawn": subagentSpawnSchema,
 } as const;

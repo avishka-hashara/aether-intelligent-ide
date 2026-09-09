@@ -11,6 +11,7 @@ import {
 } from "./auth.js";
 import { createDaemonServer } from "./server.js";
 import { initDB, missions } from "@aether/cli";
+import { eq } from "drizzle-orm";
 import { MissionEvent } from "@aether/protocol";
 
 describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
@@ -414,6 +415,73 @@ describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
       } finally {
         chatSpy.mockRestore();
         process.env.OPENROUTER_API_KEY = prevKey;
+        await server.close();
+      }
+    });
+
+    it("cancels an active mission via POST /v1/missions/:id/cancel", async () => {
+      const token = "cancel-test-token-1234567890abcdef";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        // Create a mission
+        const createRes = await server.inject({
+          method: "POST",
+          url: "/v1/missions",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            workspaceId: tmpWorkspace,
+            goal: "Task to cancel",
+          },
+        });
+        expect(createRes.statusCode).toBe(202);
+        const { missionId } = createRes.json();
+
+        // Cancel the mission
+        const cancelRes = await server.inject({
+          method: "POST",
+          url: `/v1/missions/${missionId}/cancel`,
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+        });
+
+        expect(cancelRes.statusCode).toBe(200);
+        expect(cancelRes.json()).toEqual({
+          status: "cancelled",
+          missionId,
+        });
+
+        // Verify status in DB
+        const { db, sqlite } = initDB(tmpWorkspace);
+        const rows = db.select().from(missions).where(eq(missions.id, missionId)).all();
+        expect(rows[0].status).toBe("cancelled");
+        sqlite.close();
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("returns 404 when applying a non-existent mission via POST /v1/missions/:id/apply", async () => {
+      const token = "apply-test-token-1234567890abcdef";
+      const { server } = createDaemonServer({ token });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/missions/m_unknown/apply",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+        });
+
+        expect(res.statusCode).toBe(404);
+        expect(res.json().error).toBe("mission_not_found");
+      } finally {
         await server.close();
       }
     });

@@ -18,6 +18,8 @@
   "dependencies": {
     "@aether/protocol": "workspace:*",
     "@aether/providers": "workspace:*",
-    "@aether/tools": "workspace:*"
+    "@aether/sandbox": "workspace:*",
+    "@aether/tools": "workspace:*",
+    "p-queue": "^9.3.3"
   }
 }

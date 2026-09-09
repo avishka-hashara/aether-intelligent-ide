@@ -18,6 +18,14 @@ import {
   BlackboardStore,
   InMemoryBlackboard,
 } from "./blackboard.js";
+import { findSymbols, CodeSymbolsInput, CodeSymbol } from "./symbols.js";
+import {
+  spawnSubagent,
+  SubagentSpawnInput,
+  SubagentSpawnerContext,
+  AgentLoopRunner,
+  createScoutToolRegistry,
+} from "./subagent.js";
 import { ToolResult } from "@aether/protocol";
 
 export * from "./security.js";
@@ -26,19 +34,40 @@ export * from "./search.js";
 export * from "./terminal.js";
 export * from "./schemas.js";
 export * from "./blackboard.js";
+export * from "./symbols.js";
+export * from "./subagent.js";
+
+export interface ToolRegistryOptions {
+  blackboardStore?: BlackboardStore;
+  provider?: any;
+  model?: string;
+  agentLoopRunner?: AgentLoopRunner;
+  signal?: AbortSignal;
+}
 
 /**
  * ToolRegistry encapsulates a workspaceRoot and provides bound tool instances
- * matching the canonical tool namespace: fs.read, fs.list, fs.glob, fs.patch, search.grep, terminal.exec, task.update, blackboard.set.
+ * matching the canonical tool namespace: fs.read, fs.list, fs.glob, fs.patch, search.grep, terminal.exec, task.update, blackboard.set, code.symbols, subagent.spawn.
  */
 export class ToolRegistry {
   private readonly blackboardStore: BlackboardStore;
+  private readonly options: ToolRegistryOptions;
 
   constructor(
     readonly workspaceRoot: string,
-    blackboardStore?: BlackboardStore
+    optionsOrBlackboard?: ToolRegistryOptions | BlackboardStore
   ) {
-    this.blackboardStore = blackboardStore ?? new InMemoryBlackboard();
+    if (
+      optionsOrBlackboard &&
+      ("get" in optionsOrBlackboard || "set" in optionsOrBlackboard)
+    ) {
+      this.blackboardStore = optionsOrBlackboard as BlackboardStore;
+      this.options = { blackboardStore: this.blackboardStore };
+    } else {
+      this.options = (optionsOrBlackboard as ToolRegistryOptions) ?? {};
+      this.blackboardStore =
+        this.options.blackboardStore ?? new InMemoryBlackboard();
+    }
   }
 
   get blackboardState(): BlackboardStore {
@@ -78,5 +107,24 @@ export class ToolRegistry {
       this.blackboardStore.get<T>(key),
     getSnapshot: (): Record<string, unknown> =>
       this.blackboardStore.getSnapshot(),
+  };
+
+  readonly code = {
+    symbols: (input?: CodeSymbolsInput): Promise<ToolResult> =>
+      findSymbols(this.workspaceRoot, input),
+  };
+
+  readonly subagent = {
+    spawn: (input: SubagentSpawnInput): Promise<ToolResult> =>
+      spawnSubagent(
+        {
+          workspaceRoot: this.workspaceRoot,
+          provider: this.options.provider,
+          model: this.options.model,
+          runner: this.options.agentLoopRunner,
+          signal: this.options.signal,
+        },
+        input
+      ),
   };
 }
