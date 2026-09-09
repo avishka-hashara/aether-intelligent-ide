@@ -32,6 +32,11 @@ import {
   AgentLoopRunner,
   SubagentSpawnerContext,
 } from "./subagent.js";
+import {
+  searchCodebase,
+  CodebaseSearchInput,
+  CodebaseToolContext,
+} from "./codebase.js";
 import { ToolResult } from "@aether/protocol";
 
 export * from "./security.js";
@@ -43,6 +48,7 @@ export * from "./blackboard.js";
 export * from "./symbols.js";
 export * from "./subagent.js";
 export * from "./artifacts.js";
+export * from "./codebase.js";
 
 export interface ToolRegistryOptions {
   blackboardStore?: BlackboardStore;
@@ -53,6 +59,7 @@ export interface ToolRegistryOptions {
   artifactStore?: any;
   missionId?: string;
   onHumanAsk?: (question: string) => Promise<string> | void;
+  vectorStore?: any;
 }
 
 /**
@@ -152,6 +159,14 @@ export class ToolRegistry {
         artifactStore: this.options.artifactStore,
         missionId: this.options.missionId,
         onHumanAsk: this.options.onHumanAsk,
+      }),
+  };
+
+  readonly codebase = {
+    search: (input: CodebaseSearchInput): Promise<ToolResult> =>
+      searchCodebase(input, {
+        vectorStore: this.options.vectorStore,
+        workspaceRoot: this.workspaceRoot,
       }),
   };
 }

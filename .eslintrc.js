@@ -42,6 +42,7 @@ export default [
             "packages/providers/**/*",
             "packages/sandbox/**/*",
             "packages/artifacts/**/*",
+            "packages/context/**/*",
           ],
           mode: "full",
         },

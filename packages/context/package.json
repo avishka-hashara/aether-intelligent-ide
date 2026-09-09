@@ -1,0 +1,22 @@
+{
+  "name": "@aether/context",
+  "version": "1.0.0",
+  "description": "Codebase indexing, recursive workspace scanning, and ChromaDB vector search for Aether",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "type": "module",
+  "dependencies": {
+    "@aether/protocol": "workspace:*",
+    "chromadb": "^3.5.0"
+  }
+}

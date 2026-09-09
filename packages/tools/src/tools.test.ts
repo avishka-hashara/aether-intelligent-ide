@@ -323,6 +323,49 @@ describe("Tool Layer v1", () => {
       );
       expect(askedQuestion).toBe("Should we proceed with database migration?");
     });
+
+    it("should expose codebase.search schema with query required", () => {
+      expect(toolSchemas["codebase.search"].required).toContain("query");
+    });
+
+    it("should execute codebase.search through ToolRegistry with vectorStore", async () => {
+      const mockVectorStore = {
+        search: async (query: string, limit: number) => {
+          return [
+            {
+              filepath: "src/auth/login.ts",
+              content: "export async function loginUser(req) { ... }",
+              startLine: 15,
+              endLine: 30,
+              score: 0.95,
+            },
+          ];
+        },
+      };
+
+      const registry = new ToolRegistry(tmpDir, {
+        vectorStore: mockVectorStore,
+      });
+
+      const res = await registry.codebase.search({
+        query: "login authentication handler",
+        maxResults: 3,
+      });
+
+      expect(res.ok).toBe(true);
+      const data = res.result as any;
+      expect(data.count).toBe(1);
+      expect(data.matches[0].filepath).toBe("src/auth/login.ts");
+      expect(data.matches[0].lines).toBe("L15-L30");
+      expect(data.matches[0].score).toBe(0.95);
+    });
+
+    it("should fail codebase.search when query is missing", async () => {
+      const registry = new ToolRegistry(tmpDir);
+      const res = await registry.codebase.search({ query: "   " });
+      expect(res.ok).toBe(false);
+      expect(res.error?.code).toBe("invalid_input");
+    });
   });
 });
 

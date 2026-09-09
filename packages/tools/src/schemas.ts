@@ -287,6 +287,25 @@ export const humanAskSchema = {
   additionalProperties: false,
 } as const;
 
+export const codebaseSearchSchema = {
+  type: "object",
+  properties: {
+    query: {
+      type: "string",
+      description:
+        "Natural language query or code concept to semantically search for in the codebase.",
+    },
+    maxResults: {
+      type: "integer",
+      minimum: 1,
+      description:
+        "Maximum number of semantically relevant code chunks to return (defaults to 5).",
+    },
+  },
+  required: ["query"],
+  additionalProperties: false,
+} as const;
+
 export const toolSchemas = {
   "fs.read": fsReadSchema,
   "fs.list": fsListSchema,
@@ -300,4 +319,5 @@ export const toolSchemas = {
   "subagent.spawn": subagentSpawnSchema,
   "artifact.publish": artifactPublishSchema,
   "human.ask": humanAskSchema,
+  "codebase.search": codebaseSearchSchema,
 } as const;
