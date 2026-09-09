@@ -3,6 +3,7 @@ import * as crypto from "node:crypto";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import Fastify, { FastifyInstance } from "fastify";
+import cors from "@fastify/cors";
 import websocketPlugin from "@fastify/websocket";
 import type { WebSocket } from "ws";
 import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
@@ -148,6 +149,9 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
   const server = Fastify({
     logger: options.logger ?? false,
   }).withTypeProvider<TypeBoxTypeProvider>();
+
+  // Register CORS
+  server.register(cors, { origin: "*" });
 
   function broadcastEvent(event: MissionEvent): void {
     const raw = JSON.stringify(event);

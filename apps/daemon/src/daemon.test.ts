@@ -97,6 +97,26 @@ describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
     }
   });
 
+  it("sets CORS headers allowing requests from webviews", async () => {
+    const token = "cors-test-token-1234567890abcdef";
+    const { server } = createDaemonServer({ token });
+    await server.listen({ host: "127.0.0.1", port: 0 });
+
+    try {
+      const res = await server.inject({
+        method: "OPTIONS",
+        url: "/v1/health",
+        headers: {
+          origin: "vscode-webview://webview-id",
+          "access-control-request-method": "GET",
+        },
+      });
+      expect(res.headers["access-control-allow-origin"]).toBe("*");
+    } finally {
+      await server.close();
+    }
+  });
+
   it("validates request body on POST /v1/missions and creates SQLite mission", async () => {
     const token = "mission-test-token-1234567890abcdef";
     const { server } = createDaemonServer({ token });
