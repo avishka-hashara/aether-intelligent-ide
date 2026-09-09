@@ -12,6 +12,7 @@ import { MissionEvent } from "@aether/protocol";
 import { ToolRegistry, toolSchemas } from "@aether/tools";
 import { OpenRouterClient } from "@aether/providers";
 import { BudgetTracker, runAgentLoop, MissionOrchestrator } from "@aether/agent-core";
+import { ArtifactStore } from "@aether/artifacts";
 import { initDB, workspaces, missions, missionEvents } from "@aether/cli";
 import { createAuthPreHandler, generateToken } from "./auth.js";
 
@@ -63,6 +64,7 @@ export interface DaemonServerOptions {
   token?: string;
   logger?: boolean;
   orchestrator?: MissionOrchestrator;
+  workspaceRoot?: string;
 }
 
 export interface DaemonServerInstance {
@@ -365,6 +367,208 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
           missionId,
           status: "applied",
         });
+      }
+    );
+
+    // GET /v1/missions/:id/artifacts
+    v1.get<{ Params: { id: string } }>(
+      "/missions/:id/artifacts",
+      async (request, reply) => {
+        const missionId = request.params.id;
+        const workspacePath =
+          missionWorkspaceMap.get(missionId)?.workspacePath ||
+          options.workspaceRoot ||
+          path.resolve(".");
+
+        try {
+          const { sqlite } = initDB(workspacePath);
+          const rows = sqlite
+            .prepare(
+              `SELECT a.* FROM artifacts a
+               INNER JOIN (
+                 SELECT id, MAX(version) AS max_version
+                 FROM artifacts
+                 WHERE mission_id = ?
+                 GROUP BY id
+               ) latest ON a.id = latest.id AND a.version = latest.max_version
+               WHERE a.mission_id = ?
+               ORDER BY a.created_at ASC`
+            )
+            .all(missionId, missionId) as any[];
+
+          const artifactsList = rows.map((r: any) => ({
+            id: r.id,
+            missionId: r.mission_id,
+            runId: r.run_id || undefined,
+            type: r.type,
+            version: r.version,
+            title: r.title,
+            status: r.status,
+            requiresApproval: Boolean(r.requires_approval),
+            body: JSON.parse(r.body_json || "null"),
+            createdAt: r.created_at,
+            updatedAt: r.updated_at,
+          }));
+
+          return reply.status(200).send({
+            missionId,
+            artifacts: artifactsList,
+          });
+        } catch (err: any) {
+          return reply.status(500).send({
+            error: "artifacts_fetch_failed",
+            message: err?.message || String(err),
+          });
+        }
+      }
+    );
+
+    // POST /v1/artifacts/:id/comments
+    v1.post<{
+      Params: { id: string };
+      Body: { body: string; anchor?: any };
+    }>(
+      "/artifacts/:id/comments",
+      async (request, reply) => {
+        const artifactId = request.params.id;
+        const { body: commentBody, anchor } = request.body || {};
+
+        if (!commentBody || typeof commentBody !== "string" || !commentBody.trim()) {
+          return reply.status(400).send({
+            error: "invalid_body",
+            message: "Comment body is required and cannot be empty.",
+          });
+        }
+
+        const workspacePath = options.workspaceRoot || path.resolve(".");
+        try {
+          const { sqlite } = initDB(workspacePath);
+          const art = sqlite
+            .prepare(
+              "SELECT mission_id, MAX(version) as version FROM artifacts WHERE id = ?"
+            )
+            .get(artifactId) as any;
+
+          const missionId = art?.mission_id || "default";
+          const artifactVersion = art?.version || 1;
+
+          const store = new ArtifactStore(sqlite);
+          const comment = await store.addComment({
+            artifactId,
+            artifactVersion,
+            author: "user",
+            body: commentBody.trim(),
+            anchor,
+            missionId,
+          });
+
+          broadcastEvent({
+            schemaVersion: 1,
+            seq: Date.now(),
+            id: crypto.randomUUID(),
+            missionId,
+            ts: new Date().toISOString(),
+            type: "artifact.comment_created",
+            payload: comment,
+          });
+
+          return reply.status(201).send(comment);
+        } catch (err: any) {
+          return reply.status(500).send({
+            error: "comment_creation_failed",
+            message: err?.message || String(err),
+          });
+        }
+      }
+    );
+
+    // POST /v1/missions/:id/approvals
+    v1.post<{
+      Params: { id: string };
+      Body: {
+        approvalId: string;
+        decision: "approve" | "reject" | "modify";
+        comment?: string;
+      };
+    }>(
+      "/missions/:id/approvals",
+      async (request, reply) => {
+        const missionId = request.params.id;
+        const { approvalId, decision, comment } = request.body || {};
+
+        if (!approvalId || !["approve", "reject", "modify"].includes(decision)) {
+          return reply.status(400).send({
+            error: "invalid_approval_request",
+            message: "approvalId and valid decision ('approve' | 'reject' | 'modify') are required.",
+          });
+        }
+
+        const workspacePath =
+          missionWorkspaceMap.get(missionId)?.workspacePath ||
+          options.workspaceRoot ||
+          path.resolve(".");
+
+        try {
+          const { sqlite } = initDB(workspacePath);
+          const now = new Date().toISOString();
+
+          sqlite
+            .prepare(
+              `UPDATE approvals
+               SET decision = ?, decided_by = 'user', comment = ?, decided_at = ?
+               WHERE id = ? AND mission_id = ?`
+            )
+            .run(decision, comment || null, now, approvalId, missionId);
+
+          const steeringBody = `[APPROVAL DECISION] Gate ${approvalId} was ${decision.toUpperCase()}.${
+            comment ? ` Feedback: ${comment}` : ""
+          }`;
+
+          sqlite
+            .prepare(
+              `INSERT INTO steering_inbox (id, mission_id, source, body, consumed_at, created_at)
+               VALUES (?, ?, 'user', ?, NULL, ?)`
+            )
+            .run(`steer-appr-${crypto.randomUUID()}`, missionId, steeringBody, now);
+
+          const nextStatus = decision === "reject" ? "failed" : "executing";
+
+          sqlite
+            .prepare("UPDATE missions SET status = ?, updated_at = ? WHERE id = ?")
+            .run(nextStatus, now, missionId);
+
+          broadcastEvent({
+            schemaVersion: 1,
+            seq: Date.now(),
+            id: crypto.randomUUID(),
+            missionId,
+            ts: now,
+            type: "approval.resolved",
+            payload: { approvalId, decision, comment, nextStatus },
+          });
+
+          broadcastEvent({
+            schemaVersion: 1,
+            seq: Date.now(),
+            id: crypto.randomUUID(),
+            missionId,
+            ts: now,
+            type: "mission.state_changed",
+            payload: { missionId, status: nextStatus },
+          });
+
+          return reply.status(200).send({
+            missionId,
+            approvalId,
+            decision,
+            status: nextStatus,
+          });
+        } catch (err: any) {
+          return reply.status(500).send({
+            error: "approval_resolution_failed",
+            message: err?.message || String(err),
+          });
+        }
       }
     );
 

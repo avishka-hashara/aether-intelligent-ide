@@ -10,6 +10,7 @@
   "type": "module",
   "dependencies": {
     "@aether/agent-core": "workspace:*",
+    "@aether/artifacts": "workspace:*",
     "@aether/cli": "workspace:*",
     "@aether/protocol": "workspace:*",
     "@aether/providers": "workspace:*",

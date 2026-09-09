@@ -20,11 +20,17 @@ import {
 } from "./blackboard.js";
 import { findSymbols, CodeSymbolsInput, CodeSymbol } from "./symbols.js";
 import {
+  publishArtifact,
+  humanAsk,
+  ArtifactPublishInput,
+  HumanAskInput,
+  ArtifactToolContext,
+} from "./artifacts.js";
+import {
   spawnSubagent,
   SubagentSpawnInput,
-  SubagentSpawnerContext,
   AgentLoopRunner,
-  createScoutToolRegistry,
+  SubagentSpawnerContext,
 } from "./subagent.js";
 import { ToolResult } from "@aether/protocol";
 
@@ -36,6 +42,7 @@ export * from "./schemas.js";
 export * from "./blackboard.js";
 export * from "./symbols.js";
 export * from "./subagent.js";
+export * from "./artifacts.js";
 
 export interface ToolRegistryOptions {
   blackboardStore?: BlackboardStore;
@@ -43,6 +50,9 @@ export interface ToolRegistryOptions {
   model?: string;
   agentLoopRunner?: AgentLoopRunner;
   signal?: AbortSignal;
+  artifactStore?: any;
+  missionId?: string;
+  onHumanAsk?: (question: string) => Promise<string> | void;
 }
 
 /**
@@ -126,5 +136,22 @@ export class ToolRegistry {
         },
         input
       ),
+  };
+
+  readonly artifact = {
+    publish: (input: ArtifactPublishInput): Promise<ToolResult> =>
+      publishArtifact(input, {
+        artifactStore: this.options.artifactStore,
+        missionId: this.options.missionId,
+      }),
+  };
+
+  readonly human = {
+    ask: (input: HumanAskInput): Promise<ToolResult> =>
+      humanAsk(input, {
+        artifactStore: this.options.artifactStore,
+        missionId: this.options.missionId,
+        onHumanAsk: this.options.onHumanAsk,
+      }),
   };
 }

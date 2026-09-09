@@ -5,6 +5,8 @@ import { postMessage } from "./lib/vscode";
 import { SpawnMission } from "./components/SpawnMission";
 import { MissionBoard } from "./components/MissionBoard";
 import { LivePane } from "./components/LivePane";
+import { AgentInbox } from "./components/AgentInbox";
+import { ArtifactViewer } from "./components/ArtifactViewer";
 import { Activity, ShieldCheck, Zap } from "lucide-react";
 
 const queryClient = new QueryClient();
@@ -14,6 +16,7 @@ export const App: React.FC = () => {
   const init = useMissionStore((state) => state.init);
   const daemonPort = useMissionStore((state) => state.daemonPort);
   const missions = useMissionStore((state) => state.missions);
+  const selectedMissionId = useMissionStore((state) => state.selectedMissionId);
 
   const [daemonConnected, setDaemonConnected] = useState(false);
 
@@ -46,6 +49,8 @@ export const App: React.FC = () => {
   const activeCount = Object.values(missions).filter(
     (m) => m.status === "executing" || m.status === "queued"
   ).length;
+
+  const activeMissionId = selectedMissionId || Object.keys(missions)[0];
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -86,21 +91,23 @@ export const App: React.FC = () => {
           </div>
         </header>
 
-        {/* 3-Pane Layout: Spawn Mission | Mission Board | Live Event Pane */}
+        {/* 3-Pane Layout: Spawn Mission | Mission Board & Inbox | Live Pane & Artifacts */}
         <main className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 items-start">
           {/* Left Column: Mission Spawn & Configuration */}
           <div className="lg:col-span-3 flex flex-col gap-5">
             <SpawnMission />
           </div>
 
-          {/* Center Column: Mission Board Grid */}
-          <div className="lg:col-span-4 flex flex-col h-full">
+          {/* Center Column: Agent Inbox & Mission Board Grid */}
+          <div className="lg:col-span-4 flex flex-col h-full gap-4">
+            <AgentInbox />
             <MissionBoard />
           </div>
 
-          {/* Right Column: Live Event Stream Feed */}
-          <div className="lg:col-span-5 flex flex-col h-full">
+          {/* Right Column: Live Event Stream Feed & Artifact Viewer */}
+          <div className="lg:col-span-5 flex flex-col gap-5 h-full">
             <LivePane />
+            {activeMissionId && <ArtifactViewer missionId={activeMissionId} />}
           </div>
         </main>
       </div>

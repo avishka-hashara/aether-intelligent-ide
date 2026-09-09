@@ -485,5 +485,225 @@ describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
         await server.close();
       }
     });
+
+    it("fetches latest artifacts via GET /v1/missions/:id/artifacts", async () => {
+      const token = "artifacts-test-token-1234567890abcdef";
+      const { server } = createDaemonServer({ token, workspaceRoot: tmpWorkspace });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const { sqlite } = initDB(tmpWorkspace);
+        const now = new Date().toISOString();
+        // Insert parent mission to satisfy FK
+        sqlite
+          .prepare(
+            `INSERT INTO missions (id, workspace_id, goal, surface, execution_mode, status, isolation, policy_profile, budget_json, created_at, updated_at)
+             VALUES (?, 'local', 'Test goal', 'cli', 'batch', 'planning', 'none', 'default', '{}', ?, ?)`
+          )
+          .run("m_test", now, now);
+
+        // Insert sample artifacts (v1 and v2)
+        sqlite
+          .prepare(
+            `INSERT INTO artifacts (id, mission_id, type, version, title, status, requires_approval, body_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            "plan-1",
+            "m_test",
+            "plan",
+            1,
+            "Initial Plan",
+            "draft",
+            1,
+            JSON.stringify({ text: "Step 1" }),
+            now,
+            now
+          );
+
+        sqlite
+          .prepare(
+            `INSERT INTO artifacts (id, mission_id, type, version, title, status, requires_approval, body_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            "plan-1",
+            "m_test",
+            "plan",
+            2,
+            "Refined Plan",
+            "published",
+            1,
+            JSON.stringify({ text: "Step 1 & Step 2" }),
+            now,
+            now
+          );
+
+        sqlite.close();
+
+        const res = await server.inject({
+          method: "GET",
+          url: "/v1/missions/m_test/artifacts",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const data = res.json();
+        expect(data.missionId).toBe("m_test");
+        expect(data.artifacts.length).toBe(1);
+        expect(data.artifacts[0].id).toBe("plan-1");
+        expect(data.artifacts[0].version).toBe(2);
+        expect(data.artifacts[0].title).toBe("Refined Plan");
+        expect(data.artifacts[0].body).toEqual({ text: "Step 1 & Step 2" });
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("adds comment and steering inbox entry via POST /v1/artifacts/:id/comments", async () => {
+      const token = "comment-test-token-1234567890abcdef";
+      const { server } = createDaemonServer({ token, workspaceRoot: tmpWorkspace });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const { sqlite } = initDB(tmpWorkspace);
+        const now = new Date().toISOString();
+        // Insert parent mission to satisfy FK
+        sqlite
+          .prepare(
+            `INSERT INTO missions (id, workspace_id, goal, surface, execution_mode, status, isolation, policy_profile, budget_json, created_at, updated_at)
+             VALUES (?, 'local', 'Test goal', 'cli', 'batch', 'planning', 'none', 'default', '{}', ?, ?)`
+          )
+          .run("m_comm", now, now);
+
+        sqlite
+          .prepare(
+            `INSERT INTO artifacts (id, mission_id, type, version, title, status, requires_approval, body_json, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            "art-comment-test",
+            "m_comm",
+            "code",
+            1,
+            "Code Artifact",
+            "published",
+            0,
+            JSON.stringify({ code: "console.log('hi')" }),
+            now,
+            now
+          );
+        sqlite.close();
+
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/artifacts/art-comment-test/comments",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            body: "Please add type annotations here.",
+            anchor: { line: 1 },
+          },
+        });
+
+        expect(res.statusCode).toBe(201);
+        const comment = res.json();
+        expect(comment.artifactId).toBe("art-comment-test");
+        expect(comment.body).toBe("Please add type annotations here.");
+
+        // Verify comment and steering_inbox in SQLite
+        const dbCheck = initDB(tmpWorkspace);
+        const comments = dbCheck.sqlite
+          .prepare("SELECT * FROM artifact_comments WHERE artifact_id = ?")
+          .all("art-comment-test") as any[];
+        expect(comments.length).toBe(1);
+        expect(comments[0].body).toBe("Please add type annotations here.");
+
+        const steering = dbCheck.sqlite
+          .prepare("SELECT * FROM steering_inbox WHERE mission_id = ?")
+          .all("m_comm") as any[];
+        expect(steering.length).toBe(1);
+        expect(steering[0].body).toContain("Please add type annotations here.");
+        dbCheck.sqlite.close();
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("resolves gate and injects steering directive via POST /v1/missions/:id/approvals", async () => {
+      const token = "approval-test-token-1234567890abcdef";
+      const { server } = createDaemonServer({ token, workspaceRoot: tmpWorkspace });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const { sqlite } = initDB(tmpWorkspace);
+        const now = new Date().toISOString();
+        // Insert parent mission to satisfy FK
+        sqlite
+          .prepare(
+            `INSERT INTO missions (id, workspace_id, goal, surface, execution_mode, status, isolation, policy_profile, budget_json, created_at, updated_at)
+             VALUES (?, 'local', 'Test goal', 'cli', 'batch', 'planning', 'none', 'default', '{}', ?, ?)`
+          )
+          .run("m_appr", now, now);
+
+        // Insert a pending approval
+        sqlite
+          .prepare(
+            `INSERT INTO approvals (id, mission_id, kind, summary, detail_json, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`
+          )
+          .run(
+            "appr-123",
+            "m_appr",
+            "plan",
+            "Approval required for architecture refactor",
+            JSON.stringify({ plan: "refactor" }),
+            now
+          );
+        sqlite.close();
+
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/missions/m_appr/approvals",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            approvalId: "appr-123",
+            decision: "approve",
+            comment: "Looks great, proceed with phase 2.",
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.decision).toBe("approve");
+        expect(body.status).toBe("executing");
+        expect(body.approvalId).toBe("appr-123");
+
+        // Verify DB update
+        const dbCheck = initDB(tmpWorkspace);
+        const row = dbCheck.sqlite
+          .prepare("SELECT * FROM approvals WHERE id = ?")
+          .get("appr-123") as any;
+        expect(row.decision).toBe("approve");
+        expect(row.comment).toBe("Looks great, proceed with phase 2.");
+        expect(row.decided_by).toBe("user");
+
+        // Verify steering message was queued
+        const steering = dbCheck.sqlite
+          .prepare("SELECT * FROM steering_inbox WHERE mission_id = ?")
+          .all("m_appr") as any[];
+        expect(steering.length).toBe(1);
+        expect(steering[0].body).toContain("APPROVE");
+        expect(steering[0].body).toContain("Looks great, proceed with phase 2.");
+        dbCheck.sqlite.close();
+      } finally {
+        await server.close();
+      }
+    });
   });
 });

@@ -82,3 +82,86 @@ export async function cancelMission(id: string): Promise<CancelMissionResponse> 
 
   return response.json() as Promise<CancelMissionResponse>;
 }
+
+/**
+ * Fetches all latest artifacts for a mission.
+ */
+export async function getArtifacts(missionId: string): Promise<any[]> {
+  const { baseUrl, token } = getDaemonConfig();
+
+  const response = await fetch(`${baseUrl}/v1/missions/${missionId}/artifacts`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to fetch artifacts for mission ${missionId}: HTTP ${response.status} ${errorText}`
+    );
+  }
+
+  const data = await response.json();
+  return data.artifacts || [];
+}
+
+/**
+ * Posts feedback/comment on an artifact, populating the steering inbox.
+ */
+export async function postArtifactComment(
+  artifactId: string,
+  body: string,
+  anchor?: any
+): Promise<any> {
+  const { baseUrl, token } = getDaemonConfig();
+
+  const response = await fetch(`${baseUrl}/v1/artifacts/${artifactId}/comments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ body, anchor }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to post artifact comment: HTTP ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Resolves an approval gate for a mission ('approve' | 'reject' | 'modify').
+ */
+export async function resolveApproval(
+  missionId: string,
+  approvalId: string,
+  decision: "approve" | "reject" | "modify",
+  comment?: string
+): Promise<{ missionId: string; approvalId: string; decision: string; status: string }> {
+  const { baseUrl, token } = getDaemonConfig();
+
+  const response = await fetch(`${baseUrl}/v1/missions/${missionId}/approvals`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ approvalId, decision, comment }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to resolve approval: HTTP ${response.status} ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+

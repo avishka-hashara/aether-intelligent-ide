@@ -289,5 +289,40 @@ describe("Tool Layer v1", () => {
       expect(readRes.ok).toBe(true);
       expect((readRes.result as any).content).toBe("world");
     });
+
+    it("should execute artifact.publish and return published envelope", async () => {
+      const registry = new ToolRegistry(tmpDir);
+      const res = await registry.artifact.publish({
+        id: "plan-1",
+        type: "plan",
+        title: "Test Plan",
+        body: { steps: ["Step 1", "Step 2"] },
+      });
+
+      expect(res.ok).toBe(true);
+      expect((res.result as any).artifact.title).toBe("Test Plan");
+      expect((res.result as any).artifact.status).toBe("published");
+    });
+
+    it("should execute human.ask and return suspended turn awaiting input", async () => {
+      let askedQuestion = "";
+      const registry = new ToolRegistry(tmpDir, {
+        onHumanAsk: (q) => {
+          askedQuestion = q;
+        },
+      });
+
+      const res = await registry.human.ask({
+        question: "Should we proceed with database migration?",
+      });
+
+      expect(res.ok).toBe(true);
+      expect((res.result as any).suspended).toBe(true);
+      expect((res.result as any).question).toBe(
+        "Should we proceed with database migration?"
+      );
+      expect(askedQuestion).toBe("Should we proceed with database migration?");
+    });
   });
 });
+

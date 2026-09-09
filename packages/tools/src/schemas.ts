@@ -248,6 +248,45 @@ export const subagentSpawnSchema = {
   additionalProperties: false,
 } as const;
 
+export const artifactPublishSchema = {
+  type: "object",
+  properties: {
+    id: {
+      type: "string",
+      description:
+        "Unique identifier for the artifact (e.g. 'arch-plan' or 'patch-1').",
+    },
+    type: {
+      type: "string",
+      description:
+        "Type of artifact (e.g. 'implementation_plan', 'architecture', 'diff', 'report').",
+    },
+    title: {
+      type: "string",
+      description: "Human-readable title of the artifact.",
+    },
+    body: {
+      description:
+        "Content or payload of the artifact (markdown text, structured JSON, or diff).",
+    },
+  },
+  required: ["id", "type", "title", "body"],
+  additionalProperties: false,
+} as const;
+
+export const humanAskSchema = {
+  type: "object",
+  properties: {
+    question: {
+      type: "string",
+      description:
+        "The specific question or clarification requested from the human user.",
+    },
+  },
+  required: ["question"],
+  additionalProperties: false,
+} as const;
+
 export const toolSchemas = {
   "fs.read": fsReadSchema,
   "fs.list": fsListSchema,
@@ -259,4 +298,6 @@ export const toolSchemas = {
   "blackboard.set": blackboardSetSchema,
   "code.symbols": codeSymbolsSchema,
   "subagent.spawn": subagentSpawnSchema,
+  "artifact.publish": artifactPublishSchema,
+  "human.ask": humanAskSchema,
 } as const;
