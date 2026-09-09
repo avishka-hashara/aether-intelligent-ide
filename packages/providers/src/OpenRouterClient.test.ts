@@ -92,6 +92,31 @@ describe("OpenRouterClient", () => {
     ]);
   });
 
+  it("should default model to google/gemini-2.5-flash when model is omitted in chat()", async () => {
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url, init) => {
+        capturedInit = init;
+        return new Response(createMockStream(["data: [DONE]\n\n"]), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      })
+    );
+
+    const client = new OpenRouterClient(apiKey);
+    const stream = client.chat(
+      { messages: [{ role: "user", content: "Hi" }] } as any,
+      new AbortController().signal
+    );
+    for await (const _ of stream) {}
+
+    const payload = JSON.parse(capturedInit?.body as string);
+    expect(payload.model).toBe("google/gemini-2.5-flash");
+    expect(payload.max_tokens).toBe(2048);
+  });
+
   it("should stream reasoning_delta and ignore SSE comments", async () => {
     const sseResponse = [
       ": comment 1\n",

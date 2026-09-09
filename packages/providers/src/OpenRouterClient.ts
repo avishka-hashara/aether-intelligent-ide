@@ -52,11 +52,11 @@ export class OpenRouterClient implements LLMProvider {
     const { model, messages, tools, temperature, max_tokens, ...extra } = req as any;
 
     const payload: Record<string, any> = {
-      model,
+      model: model || "google/gemini-2.5-flash",
       messages,
       ...(tools !== undefined ? { tools } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
-      ...(max_tokens !== undefined ? { max_tokens } : {}),
+      max_tokens: max_tokens ?? 2048,
       ...extra,
       stream: true,
       usage: { include: true },

@@ -277,7 +277,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
             goal,
             baseRef || "main",
             budget,
-            model ?? "anthropic/claude-3.5-sonnet"
+            model ?? "google/gemini-2.5-flash"
           )
           .catch((err) => {
             server.log.error(
@@ -707,7 +707,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
           selectionEndLine,
           model: reqModel,
         } = request.body;
-        const model = reqModel || "anthropic/claude-3.5-sonnet";
+        const model = reqModel || "google/gemini-2.5-flash";
 
         const abortController = new AbortController();
         const onAborted = () => {
