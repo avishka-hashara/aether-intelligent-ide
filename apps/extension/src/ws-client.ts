@@ -102,6 +102,7 @@ export class WsClient extends EventEmitter {
     if (this.ws) {
       try {
         this.ws.removeAllListeners();
+        this.ws.on("error", () => {});
         this.ws.close();
       } catch {}
       this.ws = null;

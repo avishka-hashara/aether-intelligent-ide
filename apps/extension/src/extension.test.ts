@@ -830,6 +830,14 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
     });
 
     it("triggers ManagerPanelManager.open from aether.openManager command", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ status: "ok" }),
+        })
+      );
+
       const subscriptions: any[] = [];
       const context = {
         subscriptions,

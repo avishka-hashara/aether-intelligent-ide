@@ -12,7 +12,7 @@ export class DaemonManager {
    * If already responsive, returns immediately.
    * Otherwise, spawns the daemon detached, unrefs it, and polls until healthy.
    */
-  async ensureStarted(context: vscode.ExtensionContext): Promise<void> {
+  async ensureStarted(_context?: vscode.ExtensionContext): Promise<void> {
     // 1. Check if daemon is already healthy
     const isRunning = await this.daemonClient.ping();
     if (isRunning) {
@@ -20,13 +20,7 @@ export class DaemonManager {
     }
 
     // 2. Resolve path to the daemon bundle
-    let daemonPath = path.resolve(context.extensionPath, "../daemon/dist/index.js");
-    if (!fs.existsSync(daemonPath)) {
-      const nestedPath = path.resolve(context.extensionPath, "daemon/dist/index.js");
-      if (fs.existsSync(nestedPath)) {
-        daemonPath = nestedPath;
-      }
-    }
+    const daemonPath = path.resolve(__dirname, "../../daemon/dist/index.js");
 
     if (!fs.existsSync(daemonPath)) {
       throw new Error(`Aether daemon bundle not found at ${daemonPath}`);
@@ -36,10 +30,8 @@ export class DaemonManager {
     const child = child_process.spawn("node", [daemonPath], {
       detached: true,
       stdio: "ignore",
-      cwd: path.dirname(daemonPath),
-      env: {
-        ...process.env,
-      },
+      cwd: path.resolve(__dirname, "../../.."),
+      env: process.env,
     });
 
     child.unref();

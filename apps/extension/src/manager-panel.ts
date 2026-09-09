@@ -8,6 +8,18 @@ export class ManagerPanelManager {
   private static currentPanel: vscode.WebviewPanel | undefined;
   private static wsListener: ((event: MissionEvent) => void) | undefined;
 
+  private static getDistPath(context: vscode.ExtensionContext): string | undefined {
+    const distCandidates = [
+      path.resolve(context.extensionPath, "..", "manager-ui", "dist"),
+      path.resolve(context.extensionPath, "dist", "manager-ui"),
+      path.resolve(context.extensionPath, "manager-ui"),
+    ];
+
+    return distCandidates.find((dir) =>
+      fs.existsSync(path.join(dir, "index.html"))
+    );
+  }
+
   /**
    * Opens or reveals the Aether Mission Control webview panel.
    */
@@ -23,6 +35,8 @@ export class ManagerPanelManager {
       return ManagerPanelManager.currentPanel;
     }
 
+    const distPath = ManagerPanelManager.getDistPath(context);
+
     const panel = vscode.window.createWebviewPanel(
       "aether.manager",
       "Aether Missions",
@@ -30,6 +44,9 @@ export class ManagerPanelManager {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
+        localResourceRoots: distPath
+          ? [vscode.Uri.file(distPath), context.extensionUri]
+          : [context.extensionUri],
       }
     );
 
