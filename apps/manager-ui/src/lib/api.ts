@@ -39,14 +39,7 @@ export async function spawnMission(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({
-      workspaceId: "local",
-      goal,
-      base: {
-        type: "branch",
-        ref: base,
-      },
-    }),
+    body: JSON.stringify({ goal, base }),
   });
 
   if (!response.ok) {

@@ -25,8 +25,9 @@ You have access to filesystem tools (fs.read, fs.list, fs.glob, fs.patch), searc
 Execute the user's goal with precision. Inspect the codebase, plan your steps, make minimal and safe modifications, and verify your results before completing the mission.`;
 
 export const CreateMissionBody = Type.Object({
-  workspaceId: Type.String({ minLength: 1 }),
   goal: Type.String({ minLength: 1 }),
+  base: Type.Optional(Type.Any()),
+  workspaceId: Type.Optional(Type.String()),
   model: Type.Optional(Type.String()),
   budget: Type.Optional(
     Type.Object({
@@ -195,75 +196,95 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
         },
       },
       async (request, reply) => {
-        const { workspaceId, goal, model, budget: reqBudget } = request.body;
-          const workspacePath = path.resolve(workspaceId);
+        const { goal, base, workspaceId, model, budget: reqBudget } = request.body as any;
+        const workspacePath = path.resolve(workspaceId || options.workspaceRoot || ".");
+        const baseRef = typeof base === "string" ? base : (base?.ref || "main");
 
-          // Initialize SQLite DB at <workspacePath>/.aether/aether.db
-          const { db, sqlite } = initDB(workspacePath);
+        // Initialize SQLite DB at <workspacePath>/.aether/aether.db
+        const { db, sqlite } = initDB(workspacePath);
 
-          const now = new Date().toISOString();
-          const missionId = `m_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+        const now = new Date().toISOString();
+        const missionId = `m_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
-          // Ensure workspace record exists
-          try {
-            db.insert(workspaces)
-              .values({
-                id: workspacePath,
-                rootPath: workspacePath,
-                name: path.basename(workspacePath),
-                createdAt: now,
-              })
-              .onConflictDoNothing()
-              .run();
-          } catch {
-            // Ignored if table already has workspace
-          }
-
-          const budget = {
-            maxUsd: reqBudget?.maxUsd ?? 2.0,
-            maxTokens: reqBudget?.maxTokens ?? 500000,
-            maxWallClockMs: reqBudget?.maxWallClockMs ?? 1800000,
-            maxToolCalls: reqBudget?.maxToolCalls ?? 100,
-          };
-
-          // Create mission record in SQLite
-          db.insert(missions)
+        // Ensure workspace record exists
+        try {
+          db.insert(workspaces)
             .values({
-              id: missionId,
-              workspaceId: workspacePath,
-              goal,
-              surface: "daemon",
-              executionMode: "autonomous",
-              status: "queued",
-              isolation: "inplace",
-              policyProfile: "trusted",
-              budgetJson: JSON.stringify(budget),
-              spendUsd: 0,
-              tokensUsed: 0,
-              blackboardJson: "{}",
+              id: workspacePath,
+              rootPath: workspacePath,
+              name: path.basename(workspacePath),
               createdAt: now,
-              updatedAt: now,
             })
+            .onConflictDoNothing()
             .run();
+        } catch {
+          // Ignored if table already has workspace
+        }
 
-          // Schedule mission through MissionOrchestrator.dispatch
-          const orchestrator = getOrchestrator(workspacePath);
-          missionWorkspaceMap.set(missionId, { workspacePath, orchestrator });
+        const budget = {
+          maxUsd: reqBudget?.maxUsd ?? 2.0,
+          maxTokens: reqBudget?.maxTokens ?? 500000,
+          maxWallClockMs: reqBudget?.maxWallClockMs ?? 1800000,
+          maxToolCalls: reqBudget?.maxToolCalls ?? 100,
+        };
 
-          orchestrator
-            .dispatch(
-              missionId,
-              goal,
-              "HEAD",
-              budget,
-              model ?? "anthropic/claude-3.5-sonnet"
-            )
-            .catch((err) => {
-              server.log.error(
-                err,
-                `Mission ${missionId} orchestrator dispatch error`
-              );
-            });
+        // Create mission record in SQLite
+        db.insert(missions)
+          .values({
+            id: missionId,
+            workspaceId: workspacePath,
+            goal: goal,
+            surface: "daemon",
+            executionMode: "autonomous",
+            status: "queued",
+            isolation: "inplace",
+            branch: baseRef,
+            baseRef: baseRef,
+            policyProfile: "trusted",
+            budgetJson: JSON.stringify(budget),
+            spendUsd: 0,
+            tokensUsed: 0,
+            blackboardJson: "{}",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .run();
+
+        // Broadcast mission.created event so connected WebViews immediately receive the goal & queued status
+        broadcastEvent({
+          schemaVersion: 1,
+          seq: Date.now(),
+          id: crypto.randomUUID(),
+          missionId,
+          ts: now,
+          type: "mission.created",
+          payload: {
+            id: missionId,
+            goal,
+            status: "queued",
+            workspaceId: workspacePath,
+            base: baseRef,
+          },
+        });
+
+        // Schedule mission through MissionOrchestrator.dispatch
+        const orchestrator = getOrchestrator(workspacePath);
+        missionWorkspaceMap.set(missionId, { workspacePath, orchestrator });
+
+        orchestrator
+          .dispatch(
+            missionId,
+            goal,
+            baseRef || "main",
+            budget,
+            model ?? "anthropic/claude-3.5-sonnet"
+          )
+          .catch((err) => {
+            server.log.error(
+              err,
+              `Mission ${missionId} orchestrator dispatch error`
+            );
+          });
 
           if (sqlite) {
             try {

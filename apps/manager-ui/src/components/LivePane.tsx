@@ -142,7 +142,39 @@ export function LivePane() {
             );
           }
 
-          // 5. Mission Failed / Cancelled
+          // 5. Turn Error / Run Error
+          if (event.type === "turn.error" || event.type === "run.error") {
+            const errorMsg =
+              payload.message ||
+              payload.error ||
+              (typeof payload === "string" ? payload : "") ||
+              (event as any).error ||
+              (event as any).data?.error ||
+              (event as any).message ||
+              "An execution error occurred.";
+
+            const displayText =
+              typeof errorMsg === "object"
+                ? JSON.stringify(errorMsg, null, 2)
+                : String(errorMsg);
+
+            return (
+              <div
+                key={event.id || idx}
+                className="text-red-500 bg-red-950/30 p-2 rounded border border-red-900/50 flex items-start gap-2 text-xs font-mono"
+              >
+                <AlertOctagon className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                <div className="flex-1 overflow-x-auto whitespace-pre-wrap break-words">
+                  <span className="font-semibold uppercase text-[10px] tracking-wide block mb-0.5 text-red-400">
+                    {event.type}
+                  </span>
+                  <span>{displayText}</span>
+                </div>
+              </div>
+            );
+          }
+
+          // 6. Mission Failed / Cancelled
           if (event.type === "run.failed" || event.type === "run.cancelled") {
             return (
               <div

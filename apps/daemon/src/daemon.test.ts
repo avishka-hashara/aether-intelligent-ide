@@ -167,6 +167,41 @@ describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
     }
   });
 
+  it("spawns mission with { goal, base } payload and persists goal", async () => {
+    const token = "goal-base-test-token-1234567890abcdef";
+    const { server } = createDaemonServer({ token, workspaceRoot: tmpWorkspace });
+    await server.listen({ host: "127.0.0.1", port: 0 });
+
+    try {
+      const res = await server.inject({
+        method: "POST",
+        url: "/v1/missions",
+        headers: {
+          authorization: `Bearer ${token}`,
+        },
+        payload: {
+          goal: "Build authentication module",
+          base: "main",
+        },
+      });
+
+      expect(res.statusCode).toBe(202);
+      const resBody = res.json();
+      expect(resBody.status).toBe("queued");
+      expect(resBody.missionId).toBeDefined();
+
+      const { db, sqlite } = initDB(tmpWorkspace);
+      const rows = db.select().from(missions).all();
+      expect(rows.length).toBe(1);
+      expect(rows[0].id).toBe(resBody.missionId);
+      expect(rows[0].goal).toBe("Build authentication module");
+      expect(rows[0].baseRef).toBe("main");
+      sqlite.close();
+    } finally {
+      await server.close();
+    }
+  });
+
   it("supports WebSocket /v1/stream and broadcasts mission events to subscribers", async () => {
     const token = "websocket-test-token-1234567890ab";
     const { server, broadcastEvent } = createDaemonServer({ token });
