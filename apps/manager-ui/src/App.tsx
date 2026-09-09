@@ -1,18 +1,38 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useMissionStore } from "./store";
 import { postMessage } from "./lib/vscode";
+import { SpawnMission } from "./components/SpawnMission";
+import { MissionBoard } from "./components/MissionBoard";
+import { LivePane } from "./components/LivePane";
+import { Activity, ShieldCheck, Zap } from "lucide-react";
+
+const queryClient = new QueryClient();
 
 export const App: React.FC = () => {
-  const missions = useMissionStore((state) => state.missions);
   const dispatch = useMissionStore((state) => state.dispatch);
+  const init = useMissionStore((state) => state.init);
+  const daemonPort = useMissionStore((state) => state.daemonPort);
+  const missions = useMissionStore((state) => state.missions);
+
+  const [daemonConnected, setDaemonConnected] = useState(false);
 
   useEffect(() => {
-    // Notify host that manager webview is ready
+    // Notify host that manager webview is ready to receive configuration
     postMessage({ type: "ready" });
 
     const handleMessage = (event: MessageEvent) => {
       const data = event.data;
-      if (data && data.type === "event" && data.event) {
+      if (!data) return;
+
+      // Handle daemon initialization payload from extension
+      if (data.type === "init" && data.port && data.token) {
+        init(data.port, data.token);
+        setDaemonConnected(true);
+      }
+
+      // Handle streamed mission events
+      if (data.type === "event" && data.event) {
         dispatch(data.event);
       }
     };
@@ -21,203 +41,69 @@ export const App: React.FC = () => {
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [dispatch]);
+  }, [dispatch, init]);
 
-  const missionList = Object.values(missions);
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case "executing":
-      case "in_progress":
-        return { bg: "#0d3a58", border: "#1f6feb", text: "#58a6ff" };
-      case "completed":
-      case "applied":
-        return { bg: "#133824", border: "#238636", text: "#3fb950" };
-      case "failed":
-        return { bg: "#441a1d", border: "#da3633", text: "#f85149" };
-      case "cancelled":
-        return { bg: "#363b42", border: "#6e7681", text: "#8b949e" };
-      case "queued":
-      default:
-        return { bg: "#3a2d04", border: "#9e6a03", text: "#d29922" };
-    }
-  };
+  const activeCount = Object.values(missions).filter(
+    (m) => m.status === "executing" || m.status === "queued"
+  ).length;
 
   return (
-    <div
-      style={{
-        fontFamily: "var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif)",
-        backgroundColor: "var(--vscode-editor-background, #0d1117)",
-        color: "var(--vscode-editor-foreground, #c9d1d9)",
-        minHeight: "100vh",
-        padding: "24px 32px",
-        boxSizing: "border-box",
-      }}
-    >
-      <header
-        style={{
-          borderBottom: "1px solid var(--vscode-widget-border, #30363d)",
-          paddingBottom: "16px",
-          marginBottom: "24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "24px",
-              fontWeight: 600,
-              letterSpacing: "-0.5px",
-              background: "linear-gradient(90deg, #58a6ff, #bc8cff)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}
-          >
-            Aether Mission Control
-          </h1>
-          <p
-            style={{
-              margin: "4px 0 0 0",
-              color: "var(--vscode-descriptionForeground, #8b949e)",
-              fontSize: "13px",
-            }}
-          >
-            Parallel Autonomous Agents &amp; Mission Event Stream
-          </p>
-        </div>
-        <div
-          style={{
-            fontSize: "12px",
-            padding: "6px 12px",
-            borderRadius: "6px",
-            background: "rgba(88, 166, 255, 0.1)",
-            border: "1px solid rgba(88, 166, 255, 0.2)",
-            color: "#58a6ff",
-            fontWeight: 500,
-          }}
-        >
-          {missionList.length} Active {missionList.length === 1 ? "Mission" : "Missions"}
-        </div>
-      </header>
+    <QueryClientProvider client={queryClient}>
+      <div className="min-h-screen bg-[#1e1e1e] text-[#cccccc] p-5 flex flex-col font-sans box-border selection:bg-[#264f78]">
+        {/* Top Header */}
+        <header className="flex flex-wrap items-center justify-between gap-4 pb-4 mb-5 border-b border-[#3e3e42]">
+          <div>
+            <div className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-[#58a6ff]" />
+              <h1 className="text-xl font-bold bg-gradient-to-r from-[#58a6ff] to-[#bc8cff] bg-clip-text text-transparent tracking-tight">
+                Aether Mission Control
+              </h1>
+            </div>
+            <p className="text-xs text-[#8b949e] mt-1">
+              Real-time multi-agent orchestration, event streaming &amp; workspace lifecycle
+            </p>
+          </div>
 
-      {missionList.length === 0 ? (
-        <div
-          style={{
-            padding: "48px",
-            textAlign: "center",
-            border: "1px dashed var(--vscode-widget-border, #30363d)",
-            borderRadius: "8px",
-            background: "rgba(22, 27, 34, 0.5)",
-          }}
-        >
-          <div style={{ fontSize: "28px", marginBottom: "12px" }}>🛸</div>
-          <h3 style={{ margin: "0 0 8px 0", fontSize: "16px", color: "#f0f6fc" }}>
-            No Active Missions
-          </h3>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "13px",
-              color: "var(--vscode-descriptionForeground, #8b949e)",
-            }}
-          >
-            Missions launched via CLI or Daemon will appear here in real time.
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {missionList.map((m) => {
-            const badge = getStatusBadgeColor(m.status);
-            const transcriptSnippet =
-              m.transcript && m.transcript.length > 0
-                ? m.transcript.slice(-3).join("")
-                : null;
+          <div className="flex items-center gap-3">
+            {/* Daemon Status Indicator */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#252526] border border-[#3e3e42] text-[11px]">
+              <ShieldCheck
+                className={`w-3.5 h-3.5 ${
+                  daemonConnected ? "text-[#3fb950]" : "text-[#d29922] animate-pulse"
+                }`}
+              />
+              <span className="text-[#8b949e]">Daemon:</span>
+              <span className={daemonConnected ? "text-[#3fb950] font-medium" : "text-[#d29922]"}>
+                {daemonConnected ? `Online (: ${daemonPort})` : "Connecting..."}
+              </span>
+            </div>
 
-            return (
-              <div
-                key={m.id}
-                style={{
-                  background: "var(--vscode-sideBar-background, #161b22)",
-                  border: "1px solid var(--vscode-widget-border, #30363d)",
-                  borderRadius: "8px",
-                  padding: "16px 20px",
-                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "8px",
-                  }}
-                >
-                  <span
-                    style={{
-                      fontFamily: "monospace",
-                      fontWeight: 600,
-                      fontSize: "14px",
-                      color: "#f0f6fc",
-                    }}
-                  >
-                    {m.id}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.5px",
-                      fontWeight: 600,
-                      padding: "3px 8px",
-                      borderRadius: "12px",
-                      backgroundColor: badge.bg,
-                      border: `1px solid ${badge.border}`,
-                      color: badge.text,
-                    }}
-                  >
-                    {m.status}
-                  </span>
-                </div>
+            {/* Active Missions Badge */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#58a6ff1a] border border-[#58a6ff33] text-[11px] text-[#58a6ff]">
+              <Activity className="w-3.5 h-3.5" />
+              <span>{activeCount} Active</span>
+            </div>
+          </div>
+        </header>
 
-                {m.goal && (
-                  <div
-                    style={{
-                      fontSize: "13px",
-                      color: "#c9d1d9",
-                      marginBottom: "12px",
-                      lineHeight: "1.4",
-                    }}
-                  >
-                    {m.goal}
-                  </div>
-                )}
+        {/* 3-Pane Layout: Spawn Mission | Mission Board | Live Event Pane */}
+        <main className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 items-start">
+          {/* Left Column: Mission Spawn & Configuration */}
+          <div className="lg:col-span-3 flex flex-col gap-5">
+            <SpawnMission />
+          </div>
 
-                {transcriptSnippet && (
-                  <div
-                    style={{
-                      marginTop: "8px",
-                      padding: "8px 12px",
-                      borderRadius: "4px",
-                      background: "rgba(0, 0, 0, 0.25)",
-                      fontFamily: "monospace",
-                      fontSize: "12px",
-                      color: "#8b949e",
-                      whiteSpace: "pre-wrap",
-                      maxHeight: "80px",
-                      overflowY: "auto",
-                    }}
-                  >
-                    {transcriptSnippet}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+          {/* Center Column: Mission Board Grid */}
+          <div className="lg:col-span-4 flex flex-col h-full">
+            <MissionBoard />
+          </div>
+
+          {/* Right Column: Live Event Stream Feed */}
+          <div className="lg:col-span-5 flex flex-col h-full">
+            <LivePane />
+          </div>
+        </main>
+      </div>
+    </QueryClientProvider>
   );
 };

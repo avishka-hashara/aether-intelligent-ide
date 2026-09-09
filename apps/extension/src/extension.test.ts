@@ -829,6 +829,45 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       panel.dispose();
     });
 
+    it("posts init message with port and token to webview panel", async () => {
+      const { ManagerPanelManager } = await import("./manager-panel.js");
+      const { WsClient } = await import("./ws-client.js");
+
+      // Write mock daemon config
+      const daemonConfigFile = path.join(os.homedir(), ".aether", "daemon.json");
+      fs.mkdirSync(path.dirname(daemonConfigFile), { recursive: true });
+      const origConfig = fs.existsSync(daemonConfigFile)
+        ? fs.readFileSync(daemonConfigFile, "utf8")
+        : null;
+
+      fs.writeFileSync(
+        daemonConfigFile,
+        JSON.stringify({ port: 9876, token: "test-tok-xyz" })
+      );
+
+      const mockContext = {
+        extensionUri: { fsPath: "/dummy/ext" },
+        extensionPath: path.resolve("./"),
+        subscriptions: [],
+      } as any;
+
+      const mockWs = new WsClient();
+      const panel = ManagerPanelManager.open(mockContext, mockWs);
+
+      expect(panel.webview.postMessage).toHaveBeenCalledWith({
+        type: "init",
+        port: 9876,
+        token: "test-tok-xyz",
+      });
+
+      panel.dispose();
+
+      // Restore
+      if (origConfig) {
+        fs.writeFileSync(daemonConfigFile, origConfig);
+      }
+    });
+
     it("triggers ManagerPanelManager.open from aether.openManager command", async () => {
       vi.stubGlobal(
         "fetch",

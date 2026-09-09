@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { WsClient } from "./ws-client.js";
+import { DaemonClient } from "./daemon-client.js";
 import { MissionEvent } from "@aether/protocol";
 
 export class ManagerPanelManager {
@@ -57,6 +58,31 @@ export class ManagerPanelManager {
       panel.webview,
       context
     );
+
+    // Retrieve daemon connection info and send initial configuration to webview
+    const daemonClient = new DaemonClient();
+    const daemonInfo = daemonClient.getConnectionInfo();
+    if (daemonInfo) {
+      panel.webview.postMessage({
+        type: "init",
+        port: daemonInfo.port,
+        token: daemonInfo.token,
+      });
+    }
+
+    // Also respond to webview "ready" event with daemon info
+    panel.webview.onDidReceiveMessage((message: any) => {
+      if (message?.type === "ready") {
+        const info = daemonClient.getConnectionInfo();
+        if (info) {
+          panel.webview.postMessage({
+            type: "init",
+            port: info.port,
+            token: info.token,
+          });
+        }
+      }
+    });
 
     // Wire WsClient to forward all events to the webview panel
     if (wsClient) {

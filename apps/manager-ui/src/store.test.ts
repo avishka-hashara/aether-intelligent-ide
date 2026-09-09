@@ -103,4 +103,47 @@ describe("useMissionStore (@aether/manager-ui)", () => {
     useMissionStore.getState().dispatch(event);
     expect(useMissionStore.getState().missions["m_test_400"].status).toBe("completed");
   });
+
+  it("should save daemon port and token on init", () => {
+    useMissionStore.getState().init(45678, "secret-token-123");
+    expect(useMissionStore.getState().daemonPort).toBe(45678);
+    expect(useMissionStore.getState().daemonToken).toBe("secret-token-123");
+  });
+
+  it("should select and update selectedMissionId", () => {
+    expect(useMissionStore.getState().selectedMissionId).toBeNull();
+    useMissionStore.getState().selectMission("m_test_999");
+    expect(useMissionStore.getState().selectedMissionId).toBe("m_test_999");
+    useMissionStore.getState().selectMission(null);
+    expect(useMissionStore.getState().selectedMissionId).toBeNull();
+  });
+
+  it("should accumulate events buffer per mission", () => {
+    const ev1: MissionEvent = {
+      schemaVersion: 1,
+      seq: 1,
+      id: "ev-buf-1",
+      missionId: "m_test_buf",
+      ts: "2026-09-09T12:00:00.000Z",
+      type: "mission.created",
+      payload: { goal: "Test buffer" },
+    };
+    const ev2: MissionEvent = {
+      schemaVersion: 1,
+      seq: 2,
+      id: "ev-buf-2",
+      missionId: "m_test_buf",
+      ts: "2026-09-09T12:00:01.000Z",
+      type: "tool.started",
+      payload: { tool: "fs.read", input: { path: "package.json" } },
+    };
+
+    useMissionStore.getState().dispatch(ev1);
+    useMissionStore.getState().dispatch(ev2);
+
+    const mission = useMissionStore.getState().missions["m_test_buf"];
+    expect(mission.events).toHaveLength(2);
+    expect(mission.events[0].id).toBe("ev-buf-1");
+    expect(mission.events[1].id).toBe("ev-buf-2");
+  });
 });

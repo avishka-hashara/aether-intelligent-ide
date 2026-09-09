@@ -8,11 +8,17 @@ export interface MissionItem {
   createdAt?: string;
   updatedAt?: string;
   transcript: string[];
+  events: MissionEvent[];
   metadata?: Record<string, any>;
 }
 
 export interface MissionStoreState {
+  daemonPort: number | null;
+  daemonToken: string | null;
+  selectedMissionId: string | null;
   missions: Record<string, MissionItem>;
+  init: (port: number, token: string) => void;
+  selectMission: (id: string | null) => void;
   dispatch: (event: MissionEvent) => void;
   reset: () => void;
 }
@@ -21,7 +27,18 @@ export interface MissionStoreState {
  * Event-sourced Zustand store projecting MissionEvent streams into UI state.
  */
 export const useMissionStore = create<MissionStoreState>((set) => ({
+  daemonPort: null,
+  daemonToken: null,
+  selectedMissionId: null,
   missions: {},
+
+  init: (port: number, token: string) => {
+    set({ daemonPort: port, daemonToken: token });
+  },
+
+  selectMission: (id: string | null) => {
+    set({ selectedMissionId: id });
+  },
 
   dispatch: (event: MissionEvent) => {
     if (!event || !event.missionId) return;
@@ -32,84 +49,74 @@ export const useMissionStore = create<MissionStoreState>((set) => ({
         id: missionId,
         status: "unknown",
         transcript: [],
+        events: [],
       };
 
       const payload = (event.payload as any) || {};
+      const updatedEvents = [...(current.events || []), event];
+
+      let newStatus = current.status;
+      let newGoal = current.goal;
+      let newTranscript = current.transcript || [];
 
       switch (event.type) {
         case "mission.created":
-          return {
-            missions: {
-              ...state.missions,
-              [missionId]: {
-                id: missionId,
-                goal: payload.goal ?? current.goal ?? "",
-                status: payload.status ?? "created",
-                createdAt: event.ts,
-                updatedAt: event.ts,
-                transcript: current.transcript ?? [],
-                metadata: { ...current.metadata, ...payload },
-              },
-            },
-          };
+          newGoal = payload.goal ?? current.goal ?? "";
+          newStatus = payload.status ?? "created";
+          break;
 
         case "mission.state_changed":
-          return {
-            missions: {
-              ...state.missions,
-              [missionId]: {
-                ...current,
-                status: payload.status ?? current.status,
-                updatedAt: event.ts,
-                metadata: { ...current.metadata, ...payload },
-              },
-            },
-          };
+          newStatus = payload.status ?? current.status;
+          break;
 
         case "turn.text_delta":
-          return {
-            missions: {
-              ...state.missions,
-              [missionId]: {
-                ...current,
-                transcript: [...(current.transcript || []), payload.text || ""],
-                updatedAt: event.ts,
-              },
-            },
-          };
+          newTranscript = [...newTranscript, payload.text || ""];
+          break;
 
         case "run.failed":
         case "run.aborted":
+          newStatus = "failed";
+          break;
+
         case "run.cancelled":
-          return {
-            missions: {
-              ...state.missions,
-              [missionId]: {
-                ...current,
-                status: "failed",
-                updatedAt: event.ts,
-              },
-            },
-          };
+          newStatus = "cancelled";
+          break;
 
         case "run.finished":
         case "mission.completed":
-          return {
-            missions: {
-              ...state.missions,
-              [missionId]: {
-                ...current,
-                status: "completed",
-                updatedAt: event.ts,
-              },
-            },
-          };
+          newStatus = "completed";
+          break;
 
         default:
-          return state;
+          break;
       }
+
+      const updatedMission: MissionItem = {
+        ...current,
+        id: missionId,
+        goal: newGoal,
+        status: newStatus,
+        createdAt: current.createdAt || event.ts,
+        updatedAt: event.ts,
+        transcript: newTranscript,
+        events: updatedEvents,
+        metadata: { ...current.metadata, ...payload },
+      };
+
+      return {
+        missions: {
+          ...state.missions,
+          [missionId]: updatedMission,
+        },
+      };
     });
   },
 
-  reset: () => set({ missions: {} }),
+  reset: () =>
+    set({
+      missions: {},
+      selectedMissionId: null,
+      daemonPort: null,
+      daemonToken: null,
+    }),
 }));
