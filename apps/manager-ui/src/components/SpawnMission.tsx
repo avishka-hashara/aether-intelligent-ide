@@ -18,7 +18,7 @@ export function SpawnMission() {
     setSuccessMsg(null);
 
     try {
-      const res = await spawnMission(goal.trim(), baseBranch.trim() || "main");
+      const res = await spawnMission(goal, baseBranch);
       setSuccessMsg(`Mission created: ${res.missionId}`);
       setGoal("");
     } catch (err: any) {
