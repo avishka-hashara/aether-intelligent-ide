@@ -7,6 +7,7 @@ import { AetherCompletionProvider } from "./completion.js";
 import { ContextBridge } from "./context-bridge.js";
 import { InlineDiffManager } from "./inline-diff.js";
 import { executeInlineEdit } from "./inline-edit.js";
+import { ManagerPanelManager } from "./manager-panel.js";
 
 export * from "./daemon-client.js";
 export * from "./daemon-manager.js";
@@ -16,6 +17,7 @@ export * from "./completion.js";
 export * from "./context-bridge.js";
 export * from "./inline-diff.js";
 export * from "./inline-edit.js";
+export * from "./manager-panel.js";
 
 let wsClient: WsClient | null = null;
 
@@ -81,7 +83,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const commandOpenManager = vscode.commands.registerCommand(
     "aether.openManager",
     () => {
-      vscode.window.showInformationMessage("Aether: Command Executed");
+      ManagerPanelManager.open(context, wsClient);
     }
   );
 

@@ -9,6 +9,7 @@ const mockCommands: Map<string, Function> = new Map();
 const executedCommands: string[] = [];
 const registeredViews: string[] = [];
 const registeredCompletionProviders: any[] = [];
+const createdPanels: any[] = [];
 let mockDiagnostics: any[] = [];
 
 vi.mock("vscode", () => ({
@@ -41,12 +42,49 @@ vi.mock("vscode", () => ({
       registeredViews.push(viewId);
       return { dispose: vi.fn() };
     }),
+    createWebviewPanel: vi.fn(
+      (viewType: string, title: string, showOptions: any, options: any) => {
+        const panel: any = {
+          viewType,
+          title,
+          showOptions,
+          options,
+          webview: {
+            html: "",
+            options: {},
+            postMessage: vi.fn(),
+            asWebviewUri: vi.fn((uri: any) => ({
+              toString: () =>
+                `vscode-webview://${uri.path || uri.fsPath || "asset"}`,
+            })),
+            onDidReceiveMessage: vi.fn(),
+          },
+          reveal: vi.fn(),
+          onDidDispose: vi.fn((cb: any) => {
+            panel._disposeCb = cb;
+            return { dispose: vi.fn() };
+          }),
+          dispose: vi.fn(() => {
+            if (panel._disposeCb) panel._disposeCb();
+          }),
+        };
+        createdPanels.push(panel);
+        return panel;
+      }
+    ),
     activeTextEditor: undefined as any,
   },
   ProgressLocation: {
     SourceControl: 1,
     Window: 10,
     Notification: 15,
+  },
+  ViewColumn: {
+    Active: -1,
+    Beside: -2,
+    One: 1,
+    Two: 2,
+    Three: 3,
   },
   languages: {
     registerInlineCompletionItemProvider: vi.fn((_selector: any, provider: any) => {
@@ -740,6 +778,72 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
 
       // Decorations are cleared
       expect(mockEditor.setDecorations).toHaveBeenCalledWith(diffManager.addedDecoration, []);
+    });
+  });
+
+  describe("ManagerPanelManager & Webview Panel", () => {
+    it("creates webview panel and wires wsClient events", async () => {
+      const { ManagerPanelManager } = await import("./manager-panel.js");
+      const { WsClient } = await import("./ws-client.js");
+
+      const mockContext = {
+        extensionUri: { fsPath: "/dummy/ext" },
+        extensionPath: path.resolve("./"),
+        subscriptions: [],
+      } as any;
+
+      const mockWs = new WsClient();
+      const panel = ManagerPanelManager.open(mockContext, mockWs);
+
+      expect(panel).toBeDefined();
+      expect(vscode.window.createWebviewPanel).toHaveBeenCalledWith(
+        "aether.manager",
+        "Aether Missions",
+        expect.anything(),
+        expect.anything()
+      );
+
+      // Verify event forwarding from wsClient to panel webview
+      const testEvent: any = {
+        schemaVersion: 1,
+        seq: 1,
+        id: "ev-ws-1",
+        missionId: "m_ws_100",
+        ts: new Date().toISOString(),
+        type: "mission.created",
+        payload: { status: "executing" },
+      };
+
+      mockWs.emit("event", testEvent);
+      expect(panel.webview.postMessage).toHaveBeenCalledWith({
+        type: "event",
+        event: testEvent,
+      });
+
+      // Revealing existing panel
+      const panel2 = ManagerPanelManager.open(mockContext, mockWs);
+      expect(panel2).toBe(panel);
+      expect(panel.reveal).toHaveBeenCalled();
+
+      // Clean up panel
+      panel.dispose();
+    });
+
+    it("triggers ManagerPanelManager.open from aether.openManager command", async () => {
+      const subscriptions: any[] = [];
+      const context = {
+        subscriptions,
+        extensionPath: tmpDir,
+      } as any;
+      await activate(context);
+
+      const openManagerHandler = mockCommands.get("aether.openManager");
+      expect(openManagerHandler).toBeDefined();
+
+      createdPanels.length = 0;
+      openManagerHandler!();
+      expect(vscode.window.createWebviewPanel).toHaveBeenCalled();
+      deactivate();
     });
   });
 });

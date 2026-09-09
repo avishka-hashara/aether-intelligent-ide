@@ -24,6 +24,7 @@
     "exclude": [
         "docs",
         "node_modules",
-        "dist"
+        "dist",
+        "apps/manager-ui"
     ]
 }

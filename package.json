@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "smoke": "tsx scripts/smoke.ts",
-    "typecheck": "tsc -b tsconfig.base.json",
+    "typecheck": "tsc -b tsconfig.base.json && pnpm --filter @aether/manager-ui exec tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run"
   },
