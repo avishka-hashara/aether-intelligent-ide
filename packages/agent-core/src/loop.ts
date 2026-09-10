@@ -134,7 +134,7 @@ export async function* runAgentLoop(
   let seq = 1;
   const missionId = options.missionId ?? `mission-${crypto.randomUUID()}`;
   const runId = options.runId ?? `run-${crypto.randomUUID()}`;
-  const model = options.model ?? "google/gemini-2.5-flash";
+  const model = options.model ?? "google/gemini-1.5-flash";
   const signal = options.signal;
   const loopDetector = new LoopDetector();
 

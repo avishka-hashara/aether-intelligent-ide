@@ -303,7 +303,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
             goal,
             baseRef || "main",
             budget,
-            model ?? "google/gemini-2.5-flash"
+            model ?? "google/gemini-1.5-flash"
           )
           .catch((err) => {
             server.log.error(
@@ -641,7 +641,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
         }
 
         const { prefix, suffix, model: reqModel } = request.body;
-        const model = reqModel || "google/gemini-2.5-flash";
+        const model = reqModel || "google/gemini-1.5-flash";
 
         const abortController = new AbortController();
         const onAborted = () => {
@@ -733,7 +733,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
           selectionEndLine,
           model: reqModel,
         } = request.body;
-        const model = reqModel || "google/gemini-2.5-flash";
+        const model = reqModel || "google/gemini-1.5-flash";
 
         const abortController = new AbortController();
         const onAborted = () => {

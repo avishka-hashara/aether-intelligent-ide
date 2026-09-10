@@ -92,7 +92,7 @@ describe("OpenRouterClient", () => {
     ]);
   });
 
-  it("should default model to google/gemini-2.5-flash when model is omitted in chat()", async () => {
+  it("should default model to google/gemini-1.5-flash when model is omitted in chat()", async () => {
     let capturedInit: RequestInit | undefined;
     vi.stubGlobal(
       "fetch",
@@ -113,7 +113,7 @@ describe("OpenRouterClient", () => {
     for await (const _ of stream) {}
 
     const payload = JSON.parse(capturedInit?.body as string);
-    expect(payload.model).toBe("google/gemini-2.5-flash");
+    expect(payload.model).toBe("google/gemini-1.5-flash");
     expect(payload.max_tokens).toBe(2048);
   });
 

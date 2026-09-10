@@ -1,12 +1,20 @@
 {
-  "name": "@aether/extension",
+  "name": "aether",
   "version": "1.0.0",
+  "publisher": "aether-labs",
   "description": "Aether Intelligent IDE VS Code Extension",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aether/aether.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
   "main": "./dist/extension.js",
   "type": "module",
+  "files": [
+    "dist"
+  ],
   "activationEvents": [],
   "contributes": {
     "commands": [
@@ -48,7 +56,8 @@
   },
   "scripts": {
     "build": "tsup",
-    "watch": "tsup --watch"
+    "watch": "tsup --watch",
+    "vsce:package": "vsce package --no-dependencies"
   },
   "dependencies": {
     "@aether/protocol": "workspace:*",

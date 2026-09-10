@@ -38,6 +38,26 @@ vi.mock("vscode", () => ({
   extensions: {
     getExtension: vi.fn(),
   },
+  Uri: {
+    file: vi.fn((f: string) => ({
+      fsPath: f,
+      path: f,
+      scheme: "file",
+      toString: () => f,
+    })),
+    parse: vi.fn((s: string) => ({
+      fsPath: s,
+      path: s,
+      scheme: "file",
+      toString: () => s,
+    })),
+    joinPath: vi.fn((base: any, ...paths: string[]) => ({
+      fsPath: path.join(base?.fsPath || base?.path || "", ...paths),
+      path: path.join(base?.path || base?.fsPath || "", ...paths),
+      scheme: base?.scheme || "file",
+      toString: () => path.join(base?.fsPath || base?.path || "", ...paths),
+    })),
+  },
   window: {
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
@@ -302,7 +322,7 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       await expect(manager.ensureStarted(context)).rejects.toThrow(
         /Timed out waiting for Aether Agent Daemon/
       );
-    }, 10000);
+    }, 20000);
   });
 
   describe("WsClient", () => {
@@ -988,6 +1008,11 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
           ok: true,
           json: async () => ({ status: "ok", missionId: "m_lens_123" }),
         })
+      );
+
+      fs.writeFileSync(
+        fakeConfigFile,
+        JSON.stringify({ port: 9876, token: "lens-token" })
       );
 
       const subscriptions: any[] = [];

@@ -73,7 +73,7 @@ export class MissionOrchestrator {
     this.systemPrompt =
       options.systemPrompt ??
       "You are Aether, an expert autonomous software engineer executing inside an isolated worktree.";
-    this.defaultModel = options.defaultModel ?? "google/gemini-2.5-flash";
+    this.defaultModel = options.defaultModel ?? "google/gemini-1.5-flash";
     this.defaultBudget = options.defaultBudget ?? {
       maxUsd: 2.0,
       maxTokens: 500_000,
@@ -164,7 +164,7 @@ export class MissionOrchestrator {
         missionInfo.worktreePath = worktreePath;
         blackboard.set("worktreePath", worktreePath);
 
-        const activeModel = customModel || this.defaultModel || "google/gemini-2.5-flash";
+        const activeModel = customModel || this.defaultModel || "google/gemini-1.5-flash";
 
         // 2. Instantiate fresh ToolRegistry locked to the new worktree path
         const toolsRegistry = new ToolRegistry(worktreePath, {

@@ -9,16 +9,28 @@ export class ManagerPanelManager {
   private static currentPanel: vscode.WebviewPanel | undefined;
   private static wsListener: ((event: MissionEvent) => void) | undefined;
 
-  private static getDistPath(context: vscode.ExtensionContext): string | undefined {
-    const distCandidates = [
-      path.resolve(context.extensionPath, "..", "manager-ui", "dist"),
-      path.resolve(context.extensionPath, "dist", "manager-ui"),
-      path.resolve(context.extensionPath, "manager-ui"),
-    ];
+  private static getDistPath(context?: vscode.ExtensionContext): string | undefined {
+    const prodPath = path.join(__dirname, "manager-ui/index.html");
+    const devPath = path.join(__dirname, "../../manager-ui/dist/index.html");
+    const uiPath = fs.existsSync(prodPath) ? prodPath : devPath;
 
-    return distCandidates.find((dir) =>
-      fs.existsSync(path.join(dir, "index.html"))
-    );
+    if (fs.existsSync(uiPath)) {
+      return path.dirname(uiPath);
+    }
+
+    if (context) {
+      const distCandidates = [
+        path.resolve(context.extensionPath, "dist", "manager-ui"),
+        path.resolve(context.extensionPath, "..", "manager-ui", "dist"),
+        path.resolve(context.extensionPath, "manager-ui"),
+      ];
+
+      return distCandidates.find((dir) =>
+        fs.existsSync(path.join(dir, "index.html"))
+      );
+    }
+
+    return undefined;
   }
 
   /**

@@ -12,7 +12,10 @@ export class DaemonManager {
    * If already responsive, returns immediately.
    * Otherwise, spawns the daemon detached, unrefs it, and polls until healthy.
    */
-  async ensureStarted(_context?: vscode.ExtensionContext): Promise<void> {
+  async ensureStarted(
+    _context?: vscode.ExtensionContext,
+    timeoutMs: number = 15000
+  ): Promise<void> {
     // 1. Check if daemon is already healthy
     const isRunning = await this.daemonClient.ping();
     if (isRunning) {
@@ -20,7 +23,9 @@ export class DaemonManager {
     }
 
     // 2. Resolve path to the daemon bundle
-    const daemonPath = path.resolve(__dirname, "../../daemon/dist/index.js");
+    const prodPath = path.join(__dirname, "daemon/index.js");
+    const devPath = path.join(__dirname, "../../daemon/dist/index.js");
+    const daemonPath = fs.existsSync(prodPath) ? prodPath : devPath;
 
     if (!fs.existsSync(daemonPath)) {
       throw new Error(`Aether daemon bundle not found at ${daemonPath}`);
@@ -36,9 +41,9 @@ export class DaemonManager {
 
     child.unref();
 
-    // 4. Poll daemonClient.ping() every 500ms (up to 10 attempts)
-    const maxAttempts = 10;
+    // 4. Poll daemonClient.ping() every 500ms (up to 15000ms / 30 attempts)
     const intervalMs = 500;
+    const maxAttempts = Math.ceil(timeoutMs / intervalMs);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));

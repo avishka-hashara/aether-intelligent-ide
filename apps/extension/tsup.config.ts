@@ -9,6 +9,7 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   external: ["vscode"],
+  noExternal: ["ws", "diff", "@aether/protocol"],
   outExtension() {
     return {
       js: ".js",
