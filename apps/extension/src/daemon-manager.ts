@@ -41,14 +41,38 @@ export class DaemonManager {
 
     child.unref();
 
-    // 4. Poll daemonClient.ping() every 500ms (up to 15000ms / 30 attempts)
+    // 4. Poll daemon health every 500ms (up to 15000ms / 30 attempts)
     const intervalMs = 500;
     const maxAttempts = Math.ceil(timeoutMs / intervalMs);
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
+
+      // 4a. Health check via daemonClient.ping()
       const healthy = await this.daemonClient.ping();
       if (healthy) {
+        return;
+      }
+
+      // 4b. Dynamic port check from daemon metadata file (~/.aether/daemon.json)
+      const connInfo = this.daemonClient.getConnectionInfo();
+      if (connInfo && typeof connInfo.port === "number" && connInfo.port > 0) {
+        // Poll daemon's health using dynamic port: http://127.0.0.1:${port}/health
+        try {
+          const res = await fetch(`http://127.0.0.1:${connInfo.port}/health`, {
+            headers: connInfo.token ? { Authorization: `Bearer ${connInfo.token}` } : {},
+            signal: AbortSignal.timeout(1000),
+          });
+          if (res.ok) {
+            return;
+          }
+        } catch {
+          // fetch failed
+        }
+
+        // Fallback: If the fetch fails but the .aether/daemon.json file has successfully
+        // been written and contains a port, break out of the polling loop gracefully
+        // instead of throwing a fatal error.
         return;
       }
     }

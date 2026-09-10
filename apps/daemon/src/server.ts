@@ -199,6 +199,15 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
   // Register WebSocket plugin
   server.register(websocketPlugin);
 
+  // GET /health (unprefixed health check)
+  server.get("/health", async () => {
+    return {
+      status: "ok",
+      version: "1.0.0",
+      uptime: process.uptime(),
+    };
+  });
+
   // Register /v1 routes encapsulated with auth hook
   server.register(async (instance) => {
     const v1 = instance.withTypeProvider<TypeBoxTypeProvider>();

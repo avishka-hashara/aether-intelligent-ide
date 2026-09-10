@@ -323,6 +323,25 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
         /Timed out waiting for Aether Agent Daemon/
       );
     }, 20000);
+
+    it("gracefully falls back if fetch fails but daemon.json exists with port", async () => {
+      const mockClient = {
+        ping: vi.fn().mockResolvedValue(false),
+        getConnectionInfo: vi.fn().mockReturnValue({ port: 12345, token: "test" }),
+      } as unknown as DaemonClient;
+
+      // Create fake daemon bundle file
+      const daemonDist = path.join(tmpDir, "daemon", "dist");
+      fs.mkdirSync(daemonDist, { recursive: true });
+      fs.writeFileSync(path.join(daemonDist, "index.js"), "// fake daemon");
+
+      const manager = new DaemonManager(mockClient);
+      const context = {
+        extensionPath: path.join(tmpDir, "extension"),
+      } as any;
+
+      await expect(manager.ensureStarted(context, 1000)).resolves.toBeUndefined();
+    });
   });
 
   describe("WsClient", () => {
