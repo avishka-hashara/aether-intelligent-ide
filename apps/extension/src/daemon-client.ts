@@ -27,10 +27,10 @@ export class DaemonClient {
       }
       const raw = fs.readFileSync(this.daemonConfigPath, "utf8");
       const parsed = JSON.parse(raw);
-      if (typeof parsed?.port === "number" && typeof parsed?.token === "string") {
+      if (typeof parsed?.port === "number") {
         return {
           port: parsed.port,
-          token: parsed.token,
+          token: typeof parsed?.token === "string" ? parsed.token : "",
           pid: parsed.pid,
         };
       }
@@ -41,7 +41,7 @@ export class DaemonClient {
   }
 
   /**
-   * Calls GET http://127.0.0.1:<port>/v1/health with Authorization: Bearer <token>.
+   * Calls GET http://127.0.0.1:<port>/v1/health (or /health) with Authorization: Bearer <token>.
    * Returns true if health check succeeds, false if daemon is unreachable or unauthenticated.
    */
   async ping(): Promise<boolean> {
@@ -50,25 +50,37 @@ export class DaemonClient {
       return false;
     }
 
-    try {
-      const url = `http://127.0.0.1:${info.port}/v1/health`;
-      const res = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${info.token}`,
-        },
-        signal: AbortSignal.timeout(2000),
-      });
+    const endpoints = [
+      `http://127.0.0.1:${info.port}/v1/health`,
+      `http://127.0.0.1:${info.port}/health`,
+    ];
 
-      if (!res.ok) {
-        return false;
+    for (const url of endpoints) {
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          headers: info.token
+            ? {
+                Authorization: `Bearer ${info.token}`,
+              }
+            : {},
+          signal: AbortSignal.timeout(2000),
+        });
+
+        if (!res.ok) {
+          continue;
+        }
+
+        const data = (await res.json()) as any;
+        if (data?.status === "ok") {
+          return true;
+        }
+      } catch {
+        // Try next endpoint if available
       }
-
-      const data = (await res.json()) as any;
-      return data?.status === "ok";
-    } catch {
-      return false;
     }
+
+    return false;
   }
 
   /**

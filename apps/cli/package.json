@@ -8,7 +8,7 @@
     "aether": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup"
+    "build": "node init && tsup"
   },
   "type": "module",
   "dependencies": {

@@ -11,9 +11,8 @@ docs/protocol.ts
 node_modules
 dist
 *.tsbuildinfo
-.env
-.env.*
 .turbo
 .aether
 local
 *.db
+config.bat

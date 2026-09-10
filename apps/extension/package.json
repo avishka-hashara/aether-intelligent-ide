@@ -55,7 +55,7 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "node init && tsup",
     "watch": "tsup --watch",
     "vsce:package": "vsce package --no-dependencies"
   },

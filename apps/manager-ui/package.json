@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Event-sourced Manager UI webview application for Aether IDE",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node init && vite",
+    "build": "node init && vite build",
     "preview": "vite preview"
   },
   "type": "module",

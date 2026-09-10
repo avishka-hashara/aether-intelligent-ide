@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "turbo run build && pnpm run package:stage",
+    "build": "node init && turbo run build && pnpm run package:stage",
     "package:stage": "shx rm -rf apps/extension/dist/daemon apps/extension/dist/manager-ui && shx cp -r apps/daemon/dist apps/extension/dist/daemon && shx cp -r apps/manager-ui/dist apps/extension/dist/manager-ui",
     "smoke": "tsx scripts/smoke.ts",
     "typecheck": "tsc -b tsconfig.base.json && pnpm --filter @aether/manager-ui exec tsc --noEmit",
