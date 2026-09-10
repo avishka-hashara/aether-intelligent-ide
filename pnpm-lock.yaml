@@ -252,6 +252,9 @@ importers:
       '@aether/cli':
         specifier: workspace:*
         version: link:../cli
+      '@aether/context':
+        specifier: workspace:*
+        version: link:../../packages/context
       '@aether/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -381,6 +384,9 @@ importers:
 
   packages/agent-core:
     dependencies:
+      '@aether/context':
+        specifier: workspace:*
+        version: link:../context
       '@aether/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -428,6 +434,9 @@ importers:
 
   packages/tools:
     dependencies:
+      '@aether/context':
+        specifier: workspace:*
+        version: link:../context
       '@aether/protocol':
         specifier: workspace:*
         version: link:../protocol

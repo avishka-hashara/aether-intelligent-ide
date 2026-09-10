@@ -160,4 +160,29 @@ describe("MissionOrchestrator (@aether/agent-core)", () => {
     await orchestrator.cleanupMission("m_cleanup");
     expect(mockWorktreeManager.cleanup).toHaveBeenCalledWith("m_cleanup");
   });
+
+  it("should accept VectorStoreService and wire it down during dispatch", async () => {
+    const mockWorktreeManager = {
+      workspaceRoot,
+      create: vi.fn(async () => "/dummy/worktree"),
+      cleanup: vi.fn(async () => {}),
+      getWorktreePath: vi.fn(() => "/dummy/worktree"),
+    } as unknown as GitWorktreeManager;
+
+    const mockVectorStore = {
+      search: vi.fn(async () => []),
+    };
+
+    const orchestrator = new MissionOrchestrator({
+      workspaceRoot,
+      provider: createMockProvider(),
+      worktreeManager: mockWorktreeManager,
+      vectorStore: mockVectorStore as any,
+    });
+
+    await orchestrator.dispatch("m_vector_test", "Vector search task");
+    await orchestrator.queue.onIdle();
+
+    expect(mockWorktreeManager.create).toHaveBeenCalledWith("m_vector_test", "HEAD");
+  });
 });

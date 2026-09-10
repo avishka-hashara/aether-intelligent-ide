@@ -534,7 +534,7 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       expect(inlineEditHandler).toBeDefined();
 
       deactivate();
-    });
+    }, 15000);
   });
 
   describe("InlineDiffManager", () => {

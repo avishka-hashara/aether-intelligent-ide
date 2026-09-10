@@ -15,6 +15,7 @@
     "@aether/protocol": "workspace:*",
     "@aether/providers": "workspace:*",
     "@aether/tools": "workspace:*",
+    "@aether/context": "workspace:*",
     "@fastify/cors": "^11.3.0",
     "@fastify/type-provider-typebox": "^6.1.0",
     "@fastify/websocket": "^11.3.0",

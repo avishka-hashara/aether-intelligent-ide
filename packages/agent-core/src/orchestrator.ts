@@ -3,6 +3,7 @@ import { MissionEvent } from "@aether/protocol";
 import { GitWorktreeManager } from "@aether/sandbox";
 import { ToolRegistry, toolSchemas } from "@aether/tools";
 import { LLMProvider } from "@aether/providers";
+import { VectorStoreService } from "@aether/context";
 import { Blackboard } from "./blackboard.js";
 import { BudgetTracker, Budget } from "./budget.js";
 import { runAgentLoop } from "./loop.js";
@@ -15,6 +16,7 @@ export interface MissionOrchestratorOptions {
   defaultModel?: string;
   defaultBudget?: Budget;
   worktreeManager?: GitWorktreeManager;
+  vectorStore?: VectorStoreService | any;
   onEvent?: (event: MissionEvent) => void;
   onMissionStatusChange?: (
     missionId: string,
@@ -42,6 +44,7 @@ export class MissionOrchestrator {
   readonly queue: PQueue;
   private readonly worktreeManager: GitWorktreeManager;
   private readonly provider: LLMProvider;
+  private readonly vectorStore?: VectorStoreService | any;
   private readonly systemPrompt: string;
   private readonly defaultModel: string;
   private readonly defaultBudget: Budget;
@@ -57,9 +60,13 @@ export class MissionOrchestrator {
   // Mission metadata and blackboard tracking
   private readonly missions = new Map<string, MissionStatusInfo>();
 
-  constructor(options: MissionOrchestratorOptions) {
+  constructor(
+    options: MissionOrchestratorOptions,
+    vectorStore?: VectorStoreService | any
+  ) {
     this.workspaceRoot = options.workspaceRoot;
     this.provider = options.provider;
+    this.vectorStore = vectorStore ?? options.vectorStore;
     this.queue = new PQueue({ concurrency: options.concurrency ?? 5 });
     this.worktreeManager =
       options.worktreeManager ?? new GitWorktreeManager(options.workspaceRoot);
@@ -166,6 +173,7 @@ export class MissionOrchestrator {
           model: activeModel,
           agentLoopRunner: runAgentLoop,
           signal: abortController.signal,
+          vectorStore: this.vectorStore,
         });
 
         // 3. Start the runAgentLoop

@@ -14,6 +14,7 @@ import { ToolRegistry, toolSchemas } from "@aether/tools";
 import { OpenRouterClient } from "@aether/providers";
 import { BudgetTracker, runAgentLoop, MissionOrchestrator } from "@aether/agent-core";
 import { ArtifactStore } from "@aether/artifacts";
+import { VectorStoreService, WorkspaceScanner } from "@aether/context";
 import { initDB, workspaces, missions, missionEvents } from "@aether/cli";
 import { createAuthPreHandler, generateToken } from "./auth.js";
 
@@ -67,6 +68,9 @@ export interface DaemonServerOptions {
   logger?: boolean;
   orchestrator?: MissionOrchestrator;
   workspaceRoot?: string;
+  vectorStore?: VectorStoreService;
+  scanner?: WorkspaceScanner;
+  autoIndex?: boolean;
 }
 
 export interface DaemonServerInstance {
@@ -74,6 +78,8 @@ export interface DaemonServerInstance {
   token: string;
   broadcastEvent: (event: MissionEvent) => void;
   getOrchestrator?: (workspacePath: string) => MissionOrchestrator;
+  vectorStore: VectorStoreService;
+  scanner: WorkspaceScanner;
 }
 
 export function createDaemonServer(options: DaemonServerOptions = {}): DaemonServerInstance {
@@ -84,6 +90,25 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
     string,
     { workspacePath: string; orchestrator: MissionOrchestrator }
   >();
+
+  const workspaceRoot = path.resolve(options.workspaceRoot || ".");
+  const chromaPath = path.join(workspaceRoot, ".aether", "chroma");
+  const vectorStore =
+    options.vectorStore ??
+    new VectorStoreService({
+      path: chromaPath,
+    });
+  const scanner = options.scanner ?? new WorkspaceScanner(vectorStore);
+
+  // Non-blocking background initialization step when server starts
+  const shouldAutoIndex = options.autoIndex ?? (process.env.NODE_ENV !== "test");
+  if (shouldAutoIndex) {
+    scanner.scanAndIndex(workspaceRoot).catch((err: any) => {
+      if (options.logger) {
+        console.warn(`[Context Engine] Background workspace indexing failed for ${workspaceRoot}:`, err);
+      }
+    });
+  }
 
   function getOrchestrator(workspacePath: string): MissionOrchestrator {
     if (options.orchestrator) {
@@ -97,6 +122,7 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
         workspaceRoot: workspacePath,
         provider,
         concurrency: 5,
+        vectorStore,
         onEvent: (event) => {
           try {
             const { db } = initDB(workspacePath);
@@ -820,12 +846,41 @@ export function createDaemonServer(options: DaemonServerOptions = {}): DaemonSer
         });
       }
     );
+
+    // POST /v1/context/index
+    v1.post(
+      "/context/index",
+      async (request, reply) => {
+        const body = (request.body || {}) as any;
+        const targetWorkspace = path.resolve(
+          body.workspaceId || body.workspaceRoot || workspaceRoot
+        );
+
+        try {
+          const result = await scanner.scanAndIndex(targetWorkspace);
+          return reply.status(200).send({
+            status: "ok",
+            workspaceRoot: targetWorkspace,
+            indexedFiles: result.indexedFiles,
+            totalChunks: result.totalChunks,
+            errors: result.errors,
+          });
+        } catch (err: any) {
+          return reply.status(500).send({
+            error: "indexing_failed",
+            message: err?.message || String(err),
+          });
+        }
+      }
+    );
   }, { prefix: "/v1" });
 
   return {
     server,
     token,
     broadcastEvent,
+    vectorStore,
+    scanner,
   };
 }
 
@@ -899,7 +954,9 @@ async function startBackgroundMission({
     return;
   }
 
-  const toolsRegistry = new ToolRegistry(workspacePath);
+  const chromaPath = path.join(workspacePath, ".aether", "chroma");
+  const vectorStore = new VectorStoreService({ path: chromaPath });
+  const toolsRegistry = new ToolRegistry(workspacePath, { vectorStore });
   const provider = new OpenRouterClient(apiKey);
   const tracker = new BudgetTracker(budget);
 

@@ -158,3 +158,36 @@ export async function resolveApproval(
   return response.json();
 }
 
+export interface ReindexResponse {
+  status: string;
+  workspaceRoot?: string;
+  indexedFiles?: number;
+  totalChunks?: number;
+  errors?: Array<{ filepath: string; error: string }>;
+}
+
+/**
+ * Triggers a re-index of the workspace on the Aether Agent Daemon.
+ */
+export async function triggerReindex(workspaceId?: string): Promise<ReindexResponse> {
+  const { baseUrl, token } = getDaemonConfig();
+
+  const response = await fetch(`${baseUrl}/v1/context/index`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(workspaceId ? { workspaceId } : {}),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `Failed to trigger re-index: HTTP ${response.status} ${response.statusText} ${errorText}`
+    );
+  }
+
+  return response.json() as Promise<ReindexResponse>;
+}
+

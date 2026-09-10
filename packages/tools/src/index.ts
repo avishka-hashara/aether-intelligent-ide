@@ -38,6 +38,7 @@ import {
   CodebaseToolContext,
 } from "./codebase.js";
 import { ToolResult } from "@aether/protocol";
+import { VectorStoreService } from "@aether/context";
 
 export * from "./security.js";
 export * from "./fs.js";
@@ -59,7 +60,7 @@ export interface ToolRegistryOptions {
   artifactStore?: any;
   missionId?: string;
   onHumanAsk?: (question: string) => Promise<string> | void;
-  vectorStore?: any;
+  vectorStore?: VectorStoreService | any;
 }
 
 /**
@@ -69,21 +70,28 @@ export interface ToolRegistryOptions {
 export class ToolRegistry {
   private readonly blackboardStore: BlackboardStore;
   private readonly options: ToolRegistryOptions;
+  private readonly vectorStore?: VectorStoreService | any;
 
   constructor(
     readonly workspaceRoot: string,
-    optionsOrBlackboard?: ToolRegistryOptions | BlackboardStore
+    optionsOrBlackboard?: ToolRegistryOptions | BlackboardStore,
+    vectorStore?: VectorStoreService | any
   ) {
     if (
       optionsOrBlackboard &&
       ("get" in optionsOrBlackboard || "set" in optionsOrBlackboard)
     ) {
       this.blackboardStore = optionsOrBlackboard as BlackboardStore;
-      this.options = { blackboardStore: this.blackboardStore };
+      this.vectorStore = vectorStore;
+      this.options = { blackboardStore: this.blackboardStore, vectorStore };
     } else {
       this.options = (optionsOrBlackboard as ToolRegistryOptions) ?? {};
       this.blackboardStore =
         this.options.blackboardStore ?? new InMemoryBlackboard();
+      this.vectorStore = vectorStore ?? this.options.vectorStore;
+      if (this.vectorStore) {
+        this.options.vectorStore = this.vectorStore;
+      }
     }
   }
 
@@ -165,7 +173,7 @@ export class ToolRegistry {
   readonly codebase = {
     search: (input: CodebaseSearchInput): Promise<ToolResult> =>
       searchCodebase(input, {
-        vectorStore: this.options.vectorStore,
+        vectorStore: this.vectorStore ?? this.options.vectorStore,
         workspaceRoot: this.workspaceRoot,
       }),
   };

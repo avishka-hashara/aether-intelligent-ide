@@ -16,6 +16,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@aether/protocol": "workspace:*"
+    "@aether/protocol": "workspace:*",
+    "@aether/context": "workspace:*"
   }
 }

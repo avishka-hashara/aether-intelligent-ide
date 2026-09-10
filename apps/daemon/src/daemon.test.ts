@@ -760,5 +760,92 @@ describe("Aether Agent Daemon (@aether/daemon)", { timeout: 15000 }, () => {
         await server.close();
       }
     });
+
+    it("enforces auth on POST /v1/context/index", async () => {
+      const token = "secret-context-token";
+      const { server } = createDaemonServer({ token, workspaceRoot: tmpWorkspace });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/context/index",
+        });
+        expect(res.statusCode).toBe(401);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("triggers workspace re-indexing via POST /v1/context/index", async () => {
+      const token = "secret-context-token";
+      const mockScanner = {
+        scan: vi.fn(async () => ({
+          indexedFiles: 5,
+          totalChunks: 12,
+          errors: [],
+        })),
+        scanAndIndex: vi.fn(async () => ({
+          indexedFiles: 5,
+          totalChunks: 12,
+          errors: [],
+        })),
+      };
+
+      const { server, vectorStore, scanner } = createDaemonServer({
+        token,
+        workspaceRoot: tmpWorkspace,
+        scanner: mockScanner as any,
+      });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        expect(vectorStore).toBeDefined();
+        expect(scanner).toBeDefined();
+
+        const res = await server.inject({
+          method: "POST",
+          url: "/v1/context/index",
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
+          payload: {
+            workspaceRoot: tmpWorkspace,
+          },
+        });
+
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.status).toBe("ok");
+        expect(body.indexedFiles).toBe(5);
+        expect(body.totalChunks).toBe(12);
+        expect(mockScanner.scanAndIndex).toHaveBeenCalledWith(tmpWorkspace);
+      } finally {
+        await server.close();
+      }
+    });
+
+    it("runs non-blocking background indexing on startup when autoIndex is true", async () => {
+      const token = "secret-context-token";
+      const mockScanner = {
+        scan: vi.fn(async () => ({ indexedFiles: 1, totalChunks: 2, errors: [] })),
+        scanAndIndex: vi.fn(async () => ({ indexedFiles: 1, totalChunks: 2, errors: [] })),
+      };
+
+      const { server } = createDaemonServer({
+        token,
+        workspaceRoot: tmpWorkspace,
+        scanner: mockScanner as any,
+        autoIndex: true,
+      });
+      await server.listen({ host: "127.0.0.1", port: 0 });
+
+      try {
+        expect(mockScanner.scanAndIndex).toHaveBeenCalledWith(path.resolve(tmpWorkspace));
+      } finally {
+        await server.close();
+      }
+    });
   });
 });
+

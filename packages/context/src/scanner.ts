@@ -106,6 +106,13 @@ export class WorkspaceScanner {
     return result;
   }
 
+  /**
+   * Scans and indexes the workspace directory into the vector store.
+   */
+  async scanAndIndex(workspaceRoot: string): Promise<ScanResult> {
+    return this.scan(workspaceRoot);
+  }
+
   private collectFiles(
     currentDir: string,
     workspaceRoot: string

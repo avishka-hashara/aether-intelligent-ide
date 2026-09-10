@@ -7,7 +7,8 @@ import { MissionBoard } from "./components/MissionBoard";
 import { LivePane } from "./components/LivePane";
 import { AgentInbox } from "./components/AgentInbox";
 import { ArtifactViewer } from "./components/ArtifactViewer";
-import { Activity, ShieldCheck, Zap } from "lucide-react";
+import { Activity, RefreshCw, ShieldCheck, Zap } from "lucide-react";
+import { triggerReindex } from "./lib/api";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,25 @@ export const App: React.FC = () => {
   const selectedMissionId = useMissionStore((state) => state.selectedMissionId);
 
   const [daemonConnected, setDaemonConnected] = useState(false);
+  const [isReindexing, setIsReindexing] = useState(false);
+  const [reindexStatus, setReindexStatus] = useState<string | null>(null);
+
+  const handleReindex = async () => {
+    if (!daemonConnected || isReindexing) return;
+    setIsReindexing(true);
+    setReindexStatus(null);
+    try {
+      const res = await triggerReindex();
+      setReindexStatus(`Indexed ${res.indexedFiles ?? 0} files`);
+      setTimeout(() => setReindexStatus(null), 3000);
+    } catch (err: any) {
+      console.error("Re-indexing failed:", err);
+      setReindexStatus("Indexing failed");
+      setTimeout(() => setReindexStatus(null), 3000);
+    } finally {
+      setIsReindexing(false);
+    }
+  };
 
   useEffect(() => {
     // Notify host that manager webview is ready to receive configuration
@@ -82,6 +102,26 @@ export const App: React.FC = () => {
                 {daemonConnected ? `Online (: ${daemonPort})` : "Connecting..."}
               </span>
             </div>
+
+            {/* Re-index Workspace Button */}
+            <button
+              type="button"
+              onClick={handleReindex}
+              disabled={!daemonConnected || isReindexing}
+              title={reindexStatus || "Re-index Workspace semantic vector index"}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#252526] hover:bg-[#2d2d30] active:bg-[#37373d] disabled:opacity-50 disabled:cursor-not-allowed border border-[#3e3e42] hover:border-[#58a6ff66] transition-colors text-[11px] text-[#cccccc] cursor-pointer"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-[#58a6ff] ${
+                  isReindexing ? "animate-spin" : ""
+                }`}
+              />
+              <span className="font-medium">
+                {isReindexing
+                  ? "Indexing..."
+                  : reindexStatus || "Re-index Workspace"}
+              </span>
+            </button>
 
             {/* Active Missions Badge */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#58a6ff1a] border border-[#58a6ff33] text-[11px] text-[#58a6ff]">
