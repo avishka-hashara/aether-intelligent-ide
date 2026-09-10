@@ -20,6 +20,7 @@ export interface VectorStoreOptions {
   collection?: any;
   collectionName?: string;
   path?: string;
+  embeddingFunction?: any;
 }
 
 export interface ScanOptions {

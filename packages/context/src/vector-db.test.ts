@@ -200,4 +200,42 @@ describe("Codebase Indexing & Semantic Vector Search (@aether/context)", () => {
       expect(paths).not.toContain("logo.png");
     });
   });
+
+  describe("LocalEmbeddingFunction & Embedded Vector Store Mode", () => {
+    let localDir: string;
+
+    beforeEach(async () => {
+      localDir = await fs.promises.mkdtemp(
+        path.join(os.tmpdir(), "aether-local-vector-")
+      );
+    });
+
+    afterEach(async () => {
+      try {
+        await fs.promises.rm(localDir, { recursive: true, force: true });
+      } catch {}
+    });
+
+    it("should index and search semantically without Chroma server", async () => {
+      const store = new VectorStoreService({
+        path: path.join(localDir, "chroma"),
+      });
+
+      await store.upsertFile(
+        "src/auth/service.ts",
+        "export function loginWithPassword(email: string, pass: string) { return authenticate(email, pass); }"
+      );
+      await store.upsertFile(
+        "src/database/client.ts",
+        "export function connectPostgres(connectionString: string) { return pg.connect(connectionString); }"
+      );
+
+      const results = await store.search("authenticate user login", 3);
+      expect(results.length).toBeGreaterThan(0);
+      expect(results[0].filepath).toBe("src/auth/service.ts");
+      expect(results[0].content).toContain("loginWithPassword");
+      expect(results[0].score).toBeGreaterThan(0);
+    });
+  });
 });
+

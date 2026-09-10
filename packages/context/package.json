@@ -12,11 +12,15 @@
     }
   },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run"
   },
   "type": "module",
   "dependencies": {
     "@aether/protocol": "workspace:*",
     "chromadb": "^3.5.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
   }
 }
