@@ -70,4 +70,45 @@ export class DaemonClient {
       return false;
     }
   }
+
+  /**
+   * Dispatches a mission to POST http://127.0.0.1:<port>/v1/missions
+   */
+  async dispatchMission(
+    goal: string,
+    base: string = "main",
+    workspaceId?: string
+  ): Promise<{ ok: boolean; missionId?: string; error?: string }> {
+    const info = this.getConnectionInfo();
+    if (!info) {
+      return { ok: false, error: "Aether Daemon is not running or connected." };
+    }
+
+    try {
+      const url = `http://127.0.0.1:${info.port}/v1/missions`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${info.token}`,
+        },
+        body: JSON.stringify({
+          goal,
+          base,
+          workspaceId,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        return { ok: false, error: errText || `HTTP ${res.status}` };
+      }
+
+      const data = (await res.json()) as any;
+      return { ok: true, missionId: data.missionId };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || String(err) };
+    }
+  }
 }
+

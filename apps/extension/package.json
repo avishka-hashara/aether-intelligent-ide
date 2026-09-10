@@ -21,6 +21,10 @@
       {
         "command": "aether.openManager",
         "title": "Aether: Open Mission Manager"
+      },
+      {
+        "command": "aether.lensAction",
+        "title": "Aether: CodeLens Action"
       }
     ],
     "viewsContainers": {

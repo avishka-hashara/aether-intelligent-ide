@@ -23,6 +23,21 @@ vi.mock("vscode", () => ({
       return Promise.resolve();
     }),
   },
+  workspace: {
+    asRelativePath: vi.fn((pathOrUri: any) =>
+      typeof pathOrUri === "string" ? pathOrUri : pathOrUri?.fsPath || ""
+    ),
+    workspaceFolders: [
+      {
+        uri: { fsPath: "/workspace" },
+        name: "workspace",
+        index: 0,
+      },
+    ],
+  },
+  extensions: {
+    getExtension: vi.fn(),
+  },
   window: {
     showErrorMessage: vi.fn(),
     showInformationMessage: vi.fn(),
@@ -91,6 +106,9 @@ vi.mock("vscode", () => ({
       registeredCompletionProviders.push(provider);
       return { dispose: vi.fn() };
     }),
+    registerCodeLensProvider: vi.fn((_selector: any, _provider: any) => ({
+      dispose: vi.fn(),
+    })),
     getDiagnostics: vi.fn((_uri: any) => mockDiagnostics),
   },
   Position: class {
@@ -98,6 +116,24 @@ vi.mock("vscode", () => ({
   },
   Range: class {
     constructor(public start: any, public end: any) {}
+  },
+  CodeLens: class {
+    constructor(public range: any, public command?: any) {}
+  },
+  SymbolKind: {
+    File: 0,
+    Module: 1,
+    Namespace: 2,
+    Package: 3,
+    Class: 4,
+    Method: 5,
+    Property: 6,
+    Field: 7,
+    Constructor: 8,
+    Enum: 9,
+    Interface: 10,
+    Function: 11,
+    Variable: 12,
   },
   InlineCompletionItem: class {
     constructor(public insertText: string, public range?: any) {}
@@ -124,7 +160,7 @@ import { AetherCompletionProvider } from "./completion.js";
 import { ContextBridge } from "./context-bridge.js";
 import { InlineDiffManager } from "./inline-diff.js";
 import { executeInlineEdit } from "./inline-edit.js";
-import { activate, deactivate } from "./extension.js";
+import { activate, deactivate, AetherCodeLensProvider } from "./extension.js";
 import { MissionEvent } from "@aether/protocol";
 
 describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () => {
@@ -890,6 +926,96 @@ describe("VS Code Extension Daemon Client & Lifecycle (@aether/extension)", () =
       createdPanels.length = 0;
       openManagerHandler!();
       expect(vscode.window.createWebviewPanel).toHaveBeenCalled();
+      deactivate();
+    });
+  });
+
+  describe("AetherCodeLensProvider & CodeLens Actions", () => {
+    it("provides CodeLenses for functions, methods, classes, and interfaces", async () => {
+      const provider = new AetherCodeLensProvider();
+
+      const mockDocument = {
+        uri: { fsPath: "/workspace/src/math.ts" },
+      } as any;
+
+      const mockSymbols = [
+        {
+          name: "Calculator",
+          kind: vscode.SymbolKind.Class,
+          range: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(20, 0)),
+          children: [
+            {
+              name: "add",
+              kind: vscode.SymbolKind.Method,
+              range: new vscode.Range(new vscode.Position(2, 2), new vscode.Position(5, 2)),
+              children: [],
+            },
+          ],
+        },
+        {
+          name: "calculateTotal",
+          kind: vscode.SymbolKind.Function,
+          range: new vscode.Range(new vscode.Position(22, 0), new vscode.Position(30, 0)),
+          children: [],
+        },
+        {
+          name: "SOME_CONSTANT",
+          kind: vscode.SymbolKind.Variable,
+          range: new vscode.Range(new vscode.Position(32, 0), new vscode.Position(32, 20)),
+          children: [],
+        },
+      ];
+
+      vi.mocked(vscode.commands.executeCommand).mockResolvedValueOnce(mockSymbols as any);
+
+      const lenses = await provider.provideCodeLenses(mockDocument);
+      expect(lenses.length).toBe(3); // Class, Method, Function (Variable excluded)
+      expect(lenses[0].command?.title).toBe("✨ Aether: Modify");
+      expect(lenses[0].command?.command).toBe("aether.lensAction");
+      expect(lenses[0].command?.arguments).toEqual([
+        mockDocument.uri,
+        mockSymbols[0].range,
+        "Calculator",
+      ]);
+      expect(lenses[1].command?.arguments?.[2]).toBe("add");
+      expect(lenses[2].command?.arguments?.[2]).toBe("calculateTotal");
+    });
+
+    it("registers aether.lensAction and dispatches mission via REST API", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ status: "ok", missionId: "m_lens_123" }),
+        })
+      );
+
+      const subscriptions: any[] = [];
+      const context = {
+        subscriptions,
+        extensionPath: tmpDir,
+      } as any;
+
+      await activate(context);
+
+      const lensActionHandler = mockCommands.get("aether.lensAction");
+      expect(lensActionHandler).toBeDefined();
+
+      vi.mocked(vscode.window.showInputBox).mockResolvedValueOnce("optimize loop");
+      vi.mocked(vscode.workspace.asRelativePath as any).mockReturnValueOnce("src/math.ts");
+
+      const uri = { fsPath: "/workspace/src/math.ts" } as any;
+      const range = new vscode.Range(new vscode.Position(1, 0), new vscode.Position(5, 0));
+
+      await lensActionHandler!(uri, range, "calculateTotal");
+
+      expect(vscode.window.showInputBox).toHaveBeenCalledWith({
+        prompt: "Instruction for calculateTotal...",
+      });
+      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
+        "Aether Mission dispatched: m_lens_123"
+      );
+
       deactivate();
     });
   });
