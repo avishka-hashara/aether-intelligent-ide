@@ -1,6 +1,9 @@
 import React, { useEffect, useRef } from "react";
 import { useMissionStore } from "../store";
 import { Terminal, Wrench, FileCode, CheckCircle, AlertOctagon, Info } from "lucide-react";
+import { PrismAsyncLight } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { DiffViewer } from "./DiffViewer";
 
 export function LivePane() {
   const selectedMissionId = useMissionStore((state) => state.selectedMissionId);
@@ -90,6 +93,21 @@ export function LivePane() {
             const toolInput =
               payload.input || payload.toolCall?.arguments || payload.args || {};
 
+            let parsedInput: any = toolInput;
+            if (typeof toolInput === "string") {
+              try {
+                parsedInput = JSON.parse(toolInput);
+              } catch {
+                parsedInput = toolInput;
+              }
+            }
+
+            const isFsPatch = toolName === "fs.patch" || toolName === "patch";
+            const diffText =
+              typeof parsedInput === "object" && parsedInput !== null
+                ? parsedInput.diff || parsedInput.patch
+                : null;
+
             return (
               <div
                 key={event.id || idx}
@@ -100,17 +118,60 @@ export function LivePane() {
                   <span>TOOL CALL:</span>
                   <span className="text-[#79c0ff]">{toolName}</span>
                 </div>
-                {toolInput && Object.keys(toolInput).length > 0 && (
+                {isFsPatch && typeof diffText === "string" ? (
+                  <div className="mt-1">
+                    {parsedInput.path && (
+                      <div className="text-[10px] text-[#8b949e] mb-1 font-semibold">
+                        File: <span className="text-[#58a6ff]">{parsedInput.path}</span>
+                      </div>
+                    )}
+                    <DiffViewer diff={diffText} />
+                  </div>
+                ) : toolInput && Object.keys(toolInput).length > 0 ? (
                   <pre className="bg-[#0d1117] p-2 rounded text-[#8b949e] overflow-x-auto text-[10px] mt-1">
-                    {JSON.stringify(toolInput, null, 2)}
+                    {typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput, null, 2)}
                   </pre>
-                )}
+                ) : null}
               </div>
             );
           }
 
           // 3. Tool Finished (Result block)
           if (event.type === "tool.finished" || payload.toolResult) {
+            let originatingTool = payload.name || payload.tool || payload.toolName;
+            if (!originatingTool) {
+              for (let i = idx - 1; i >= 0; i--) {
+                const prev = events[i];
+                const prevPayload = (prev?.payload as any) || {};
+                const prevName =
+                  prevPayload.tool || prevPayload.toolCall?.name || prevPayload.name;
+                if (prevName) {
+                  originatingTool = prevName;
+                  break;
+                }
+              }
+            }
+
+            const rawResult = payload.result ?? payload.toolResult ?? payload;
+            let parsedResult: any = rawResult;
+            if (typeof rawResult === "string") {
+              try {
+                parsedResult = JSON.parse(rawResult);
+              } catch {
+                parsedResult = rawResult;
+              }
+            }
+
+            const isCodebaseSearch =
+              originatingTool === "codebase.search" ||
+              (parsedResult && (Array.isArray(parsedResult.matches) || Array.isArray(parsedResult.result?.matches)));
+
+            const matches: any[] | null = Array.isArray(parsedResult?.matches)
+              ? parsedResult.matches
+              : Array.isArray(parsedResult?.result?.matches)
+              ? parsedResult.result.matches
+              : null;
+
             return (
               <div
                 key={event.id || idx}
@@ -119,12 +180,80 @@ export function LivePane() {
                 <div className="flex items-center gap-1.5 text-[#56d364] font-semibold mb-1">
                   <FileCode className="w-3.5 h-3.5" />
                   <span>TOOL OUTPUT</span>
+                  {originatingTool && (
+                    <span className="text-[#79c0ff] text-[10px] font-normal">
+                      ({originatingTool})
+                    </span>
+                  )}
                 </div>
-                <pre className="bg-[#0d1117] p-2 rounded text-[#8b949e] overflow-x-auto text-[10px] mt-1 max-h-40">
-                  {typeof payload.result === "string"
-                    ? payload.result
-                    : JSON.stringify(payload.result ?? payload, null, 2)}
-                </pre>
+                {isCodebaseSearch && matches && matches.length > 0 ? (
+                  <div className="space-y-2 mt-1">
+                    {matches.map((match: any, mIdx: number) => {
+                      const filepath = match.filepath || "Unknown file";
+                      const snippet = match.snippet || match.content || "";
+                      const ext = filepath.split(".").pop()?.toLowerCase() || "ts";
+                      const langMap: Record<string, string> = {
+                        ts: "typescript",
+                        tsx: "tsx",
+                        js: "javascript",
+                        jsx: "jsx",
+                        json: "json",
+                        css: "css",
+                        html: "html",
+                        py: "python",
+                        md: "markdown",
+                        rs: "rust",
+                        go: "go",
+                      };
+                      const language = langMap[ext] || "typescript";
+
+                      return (
+                        <div
+                          key={mIdx}
+                          className="border border-[#30363d] rounded bg-[#0d1117] overflow-hidden"
+                        >
+                          <div className="bg-[#1c2128] px-2.5 py-1.5 border-b border-[#30363d] flex items-center justify-between">
+                            <span className="font-bold text-[#58a6ff] text-xs">
+                              {filepath}
+                            </span>
+                            <div className="flex items-center gap-2 text-[10px] text-[#8b949e]">
+                              {match.lines && (
+                                <span className="bg-[#21262d] px-1.5 py-0.5 rounded font-mono text-[#c9d1d9]">
+                                  {match.lines}
+                                </span>
+                              )}
+                              {match.score !== undefined && (
+                                <span className="text-[#3fb950] font-mono">
+                                  score: {typeof match.score === "number" ? match.score.toFixed(3) : match.score}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto text-[11px]">
+                            <PrismAsyncLight
+                              language={language}
+                              style={vscDarkPlus}
+                              customStyle={{
+                                margin: 0,
+                                padding: "0.5rem",
+                                background: "transparent",
+                                fontSize: "11px",
+                              }}
+                            >
+                              {snippet}
+                            </PrismAsyncLight>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <pre className="bg-[#0d1117] p-2 rounded text-[#8b949e] overflow-x-auto text-[10px] mt-1 max-h-40">
+                    {typeof payload.result === "string"
+                      ? payload.result
+                      : JSON.stringify(payload.result ?? payload, null, 2)}
+                  </pre>
+                )}
               </div>
             );
           }
